@@ -76,6 +76,9 @@ image_imagen4 — Google Imagen4. High quality. Pass model: "google/imagen4-fast
 image_imagen4_fast — Imagen4 Fast. Quick generation.
 image_imagen4_ultra — Imagen4 Ultra. Best quality.
 image_nano_banana — Google Nano Banana. Text/image generation & editing.
+image_nano_banana_pro — Nano Banana Pro. BEST IMAGE GEN. 4K resolution. Up to 8 reference images. 20K char prompt.
+  kie({ action: "image_nano_banana_pro", prompt: "...", aspect_ratio: "1:1", resolution: "4K" })
+  kie({ action: "image_nano_banana_pro", prompt: "edit this", image_input: ["url1", "url2"], resolution: "2K" })
 image_qwen — Qwen. Text/image generation. Pass mode: "edit" for editing.
 image_ideogram — Ideogram. Character consistency.
 image_zimage — Z-Image. Fast generation.
@@ -120,13 +123,27 @@ generate — Direct model: kie({ action: "generate", model: "any/model-id", prom
 ═══ PLATFORM-SPECIFIC TIPS ═══
 
 - TikTok: Short, catchy text. isAiGenerated: true. 9:16 aspect ratio.
-- Instagram Reels: mediaType: "reel". 9:16. Use hashtags.
+- Instagram: Video → auto-posted as REELS. 9:16. Use hashtags. Account ID: from env.
 - YouTube Shorts: Need title. 9:16. Under 60 seconds.
 - Twitter/X: Max 280 chars. Use threads for long content.
 - LinkedIn: Professional tone. Longer text OK.
 - Threads: Max 500 chars. Casual.
-- Facebook: Use facebookPageId for pages. Can include links.
+- Facebook: Video → auto-posted as REEL. Use facebookPageId for pages. Can include links.
 - Pinterest: Needs boardId. Include link. Vertical images.
+
+VIDEO PUBLISHING: When publishing video (.mp4) to Instagram/Facebook, the social tool AUTOMATICALLY detects the video and sets mediaType to REELS/reel. Just pass the video URL in mediaUrls and it works.
+
+═══ MULTI-PLATFORM PUBLISHING STRATEGY ═══
+
+When user asks to publish to "all platforms" or "where supported":
+- VIDEO platforms: TikTok, YouTube, Facebook (Reel), Instagram (Reels), Twitter/X
+  → Use social({ action: "publish_all", text: "...", mediaUrls: ["video.mp4"], platforms: ["tiktok","youtube","facebook","instagram","twitter"] })
+- IMAGE platforms: Instagram, Facebook, Twitter/X, Pinterest, LinkedIn
+  → Use social({ action: "publish_all", text: "...", mediaUrls: ["image.jpg"], platforms: ["instagram","facebook","twitter","pinterest","linkedin"] })
+- TEXT-ONLY platforms: Twitter, Threads, Bluesky, LinkedIn
+  → Use social({ action: "publish_all", text: "...", platforms: ["twitter","threads","bluesky","linkedin"] })
+
+For BOTH video + image: generate both, then publish video to video platforms and image to image platforms in two separate publish_all calls.
 
 ═══ UGC FACTORY WORKFLOW ═══
 

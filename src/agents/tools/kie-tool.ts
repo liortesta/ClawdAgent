@@ -40,6 +40,7 @@ const ALIASES: Record<string, Alias> = {
   image_imagen4_fast: { model: 'google/imagen4-fast', name: 'Google Imagen4 Fast' },
   image_imagen4_ultra:{ model: 'google/imagen4-ultra', name: 'Google Imagen4 Ultra' },
   image_nano_banana:  { model: (i) => i.imageUrl ? 'google/nano-banana-edit' : 'google/nano-banana', name: 'Google Nano Banana' },
+  image_nano_banana_pro: { model: 'nano-banana-pro', name: 'Nano Banana Pro' },
   image_flux2:        { model: (i) => i.imageUrl ? 'flux-2/pro-image-to-image' : 'flux-2/pro-text-to-image', name: 'Flux 2 Pro' },
   image_flux2_flex:   { model: (i) => i.imageUrl ? 'flux-2/flex-image-to-image' : 'flux-2/flex-text-to-image', name: 'Flux 2 Flex' },
   image_qwen:         { model: (i) => i.imageUrl ? (i.mode === 'edit' ? 'qwen/image-edit' : 'qwen/image-to-image') : 'qwen/text-to-image', name: 'Qwen' },
@@ -152,10 +153,34 @@ export class KieTool extends BaseTool {
       }
     }
 
-    // Normalize common parameter names
-    if (inputObj.imageUrl && !inputObj.image_urls) {
-      // Some models expect image_urls array, others image_url string
-      // Keep imageUrl in input and let specific models handle it
+    // Normalize camelCase → snake_case for Kie.ai API compatibility
+    if (inputObj.imageUrl && !inputObj.image_url) {
+      inputObj.image_url = inputObj.imageUrl;
+      delete inputObj.imageUrl;
+    }
+    if (inputObj.audioUrl && !inputObj.audio_url) {
+      inputObj.audio_url = inputObj.audioUrl;
+      delete inputObj.audioUrl;
+    }
+    if (inputObj.imageUrls && !inputObj.input_urls) {
+      inputObj.input_urls = inputObj.imageUrls;
+      delete inputObj.imageUrls;
+    }
+    if (inputObj.aspectRatio && !inputObj.aspect_ratio) {
+      inputObj.aspect_ratio = inputObj.aspectRatio;
+      delete inputObj.aspectRatio;
+    }
+    if (inputObj.languageCode && !inputObj.language_code) {
+      inputObj.language_code = inputObj.languageCode;
+      delete inputObj.languageCode;
+    }
+    if (inputObj.outputFormat && !inputObj.output_format) {
+      inputObj.output_format = inputObj.outputFormat;
+      delete inputObj.outputFormat;
+    }
+    if (inputObj.imageInput && !inputObj.image_input) {
+      inputObj.image_input = inputObj.imageInput;
+      delete inputObj.imageInput;
     }
 
     const body: Record<string, unknown> = {
@@ -166,7 +191,11 @@ export class KieTool extends BaseTool {
     if (input.progressCallBackUrl) body.progressCallBackUrl = input.progressCallBackUrl;
 
     const res = await this.post('/jobs/createTask', body);
-    return this.taskCreated(displayName, action, res);
+    const result = this.taskCreated(displayName, action, res);
+    if (!result.success) {
+      this.error('createTask failed', { action, modelId, response: JSON.stringify(res).slice(0, 500) });
+    }
+    return result;
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -444,6 +473,7 @@ export class KieTool extends BaseTool {
     lines.push('  image_imagen4_fast — Imagen4 Fast. Quick generation.');
     lines.push('  image_imagen4_ultra — Imagen4 Ultra. Best quality.');
     lines.push('  image_nano_banana — Google Nano Banana. Text/image editing.');
+    lines.push('  image_nano_banana_pro — Nano Banana Pro. Best image gen. 4K, up to 8 ref images. 20K char prompt.');
     lines.push('  image_qwen — Qwen. Text/image generation & editing.');
     lines.push('  image_ideogram — Ideogram. Character consistency.');
     lines.push('  image_zimage — Z-Image. Fast generation.');

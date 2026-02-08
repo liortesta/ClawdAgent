@@ -44,26 +44,40 @@ export class WorkflowTool extends BaseTool {
     const trigger = String(input.trigger ?? 'manual') as WorkflowTrigger['type'];
     const triggerConfig = String(input.triggerConfig ?? '');
     const userId = String(input.userId ?? 'system');
+    const stepsJson = input.steps as WorkflowAction[] | undefined;
 
     if (!name || !description) {
       return { success: false, output: '', error: 'name and description are required' };
     }
 
-    // AI plans the workflow steps
-    const plan = await aiChatFn(
-      `You design automation workflows. Convert a description to a series of action steps.
-Available action types: send_message, run_command, call_api, send_email, restart_container, deploy, ai_process.
-Respond ONLY with JSON:
-{ "actions": [{ "type": "ai_process", "config": { "prompt": "..." } }, { "type": "send_message", "config": { "message": "..." } }] }`,
-      `Workflow: ${description}\n\nDesign steps (JSON only):`,
-    );
-
     let actions: WorkflowAction[];
-    try {
-      const cleaned = plan.replace(/```json|```/g, '').trim();
-      actions = JSON.parse(cleaned).actions || [];
-    } catch {
-      return { success: false, output: '', error: `Could not plan workflow: ${description}` };
+
+    // If the AI provided steps directly, use them (skip AI planning)
+    if (stepsJson && Array.isArray(stepsJson) && stepsJson.length > 0) {
+      actions = stepsJson;
+    } else {
+      // AI plans the workflow steps
+      try {
+        const plan = await aiChatFn(
+          `You design automation workflows. Convert a description to a series of action steps.
+Available action types: send_message, run_command, call_api, send_email, restart_container, deploy, ai_process.
+Respond ONLY with a valid JSON object, no markdown, no extra text:
+{"actions":[{"type":"ai_process","config":{"prompt":"..."}},{"type":"send_message","config":{"message":"..."}}]}`,
+          `Workflow: ${description}\n\nDesign steps as JSON ONLY (no markdown):`,
+        );
+
+        const cleaned = plan.replace(/```json|```/g, '').replace(/^[^{]*/, '').replace(/[^}]*$/, '').trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('No JSON found in AI response');
+        actions = JSON.parse(jsonMatch[0]).actions || [];
+      } catch (err: any) {
+        this.error('Workflow AI planning failed', { name, description, error: err.message });
+        // Fallback: create a simple ai_process workflow
+        actions = [
+          { type: 'ai_process' as any, config: { prompt: description } },
+          { type: 'send_message' as any, config: { message: `Workflow "${name}" completed` } },
+        ];
+      }
     }
 
     const workflow: Workflow = {

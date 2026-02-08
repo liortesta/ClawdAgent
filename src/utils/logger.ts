@@ -10,8 +10,8 @@ const logger = winston.createLogger({
   ),
   defaultMeta: { service: 'clawdagent' },
   transports: [
-    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'logs/combined.log' }),
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error', maxsize: 50_000_000, maxFiles: 3 }),
+    new winston.transports.File({ filename: 'logs/combined.log', maxsize: 50_000_000, maxFiles: 5 }),
   ],
 });
 

@@ -107,28 +107,49 @@ export function setupHandlers(bot: Bot, engine: Engine) {
       replyTo: ctx.message.reply_to_message?.text,
     };
 
-    // Timeout: 120s for response — content creation with kie.ai polling can take 60-90s
-    const RESPONSE_TIMEOUT = 120000;
+    // Detect content-creation requests for extended timeout + progress updates
+    // NOTE: \b word boundary does NOT work with Hebrew/Unicode — removed it
+    const textLower = ctx.message.text.toLowerCase();
+    const isContentCreation = /(צור|תיצור|יצר|עשה|תעשה|create|generate|make|הפק|סרטון|וידאו|תמונה|שיר|video|image|photo|music|ugc|kie|publish|פרסם|תפרסם|פרסום|אוטומציה|automation|reels|רילס|content)/i.test(textLower);
+    const TIMEOUT = isContentCreation ? 300000 : 120000; // 5 min for content, 2 min for normal
+
+    // Keep sending 'typing' indicator every 4s while processing
+    const typingInterval = setInterval(() => {
+      ctx.replyWithChatAction('typing').catch(() => {});
+    }, 4000);
+
+    // Send progress message if processing takes > 15s
+    let progressSent = false;
+    const progressTimer = isContentCreation ? setTimeout(async () => {
+      progressSent = true;
+      await ctx.reply('🎨 Working on it — creating content can take 1-3 minutes. I\'ll send the result when it\'s ready...').catch(() => {});
+    }, 15000) : null;
+
     let response: Awaited<ReturnType<typeof engine.process>>;
     try {
       response = await Promise.race([
         engine.process(incoming),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('RESPONSE_TIMEOUT')), RESPONSE_TIMEOUT)
+          setTimeout(() => reject(new Error('RESPONSE_TIMEOUT')), TIMEOUT)
         ),
       ]);
     } catch (err: any) {
+      clearInterval(typingInterval);
+      if (progressTimer) clearTimeout(progressTimer);
       if (err.message === 'RESPONSE_TIMEOUT') {
-        logger.warn('Engine response timed out', { userId: incoming.userId, text: incoming.text.slice(0, 50) });
-        await ctx.reply('⏱ Sorry, the request took too long. Please try again with a simpler message.').catch(() => {});
+        logger.warn('Engine response timed out', { userId: incoming.userId, text: incoming.text.slice(0, 50), timeout: TIMEOUT });
+        await ctx.reply(`\u{23F1}\u{FE0F} The request timed out after ${TIMEOUT / 1000}s. Try again or simplify the request.`).catch(() => {});
         return;
       }
       throw err;
+    } finally {
+      clearInterval(typingInterval);
+      if (progressTimer) clearTimeout(progressTimer);
     }
 
     // Guard against empty responses
     if (!response.text || response.text.trim().length === 0) {
-      response.text = '🤔 I processed your request but had nothing to say. Try asking differently.';
+      response.text = '\u{1F914} I processed your request but had nothing to say. Try asking differently.';
     }
 
     const maxLen = 4000;

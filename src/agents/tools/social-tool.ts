@@ -82,7 +82,7 @@ export class SocialTool extends BaseTool {
                   mediaUrls: p.mediaUrls || [],
                 })),
               },
-              target: this.buildTarget(platform, options),
+              target: this.buildTarget(platform, options, posts[0].mediaUrls),
             },
           };
           const res = await this.post('/posts', body);
@@ -119,7 +119,7 @@ export class SocialTool extends BaseTool {
                 mediaUrls: mediaUrls || [],
                 platform,
               },
-              target: this.buildTarget(platform, options),
+              target: this.buildTarget(platform, options, mediaUrls),
             },
             scheduledTime: scheduledAt, // Blotato API uses scheduledTime at top level
           };
@@ -137,23 +137,28 @@ export class SocialTool extends BaseTool {
   }
 
   private async publishToOne(platform: string, text: string, mediaUrls?: string[], options?: Record<string, unknown>): Promise<string> {
+    const urls = mediaUrls || [];
+    const hasVideo = urls.some(u => /\.(mp4|mov|avi|webm|mkv)(\?|$)/i.test(u));
+    const mediaType = hasVideo ? (platform === 'instagram' ? 'REELS' : platform === 'facebook' ? 'reel' : undefined) : undefined;
     const body = {
       post: {
         accountId: this.getAccountId(platform),
         content: {
           text,
-          mediaUrls: mediaUrls || [],
+          mediaUrls: urls,
           platform,
         },
-        target: this.buildTarget(platform, options),
+        target: this.buildTarget(platform, options, urls),
       },
     };
+    const typeLabel = mediaType ? ` (${mediaType})` : '';
     const res = await this.post('/posts', body);
-    return `${platform}: Published! Post ID: ${res.postSubmissionId}`;
+    return `${platform}${typeLabel}: Published! Post ID: ${res.postSubmissionId}`;
   }
 
-  private buildTarget(platform: string, options?: Record<string, unknown>): Record<string, unknown> {
+  private buildTarget(platform: string, options?: Record<string, unknown>, mediaUrls?: string[]): Record<string, unknown> {
     const target: Record<string, unknown> = { targetType: platform };
+    const hasVideo = mediaUrls?.some(u => /\.(mp4|mov|avi|webm|mkv)(\?|$)/i.test(u)) ?? false;
 
     switch (platform) {
       case 'tiktok':
@@ -167,7 +172,8 @@ export class SocialTool extends BaseTool {
         target.isYourBrand = false;
         break;
       case 'instagram':
-        if (options?.mediaType) target.mediaType = options.mediaType;
+        // Auto-detect video → REELS for Instagram
+        target.mediaType = options?.mediaType ?? (hasVideo ? 'REELS' : undefined);
         if (options?.collaborators) target.collaborators = options.collaborators;
         if (options?.coverImageUrl) target.coverImageUrl = options.coverImageUrl;
         break;
@@ -182,6 +188,8 @@ export class SocialTool extends BaseTool {
         const pageId = options?.facebookPageId || options?.pageId || (config as any).BLOTATO_FACEBOOK_PAGE_ID;
         if (pageId) target.pageId = pageId;
         if (options?.linkUrl) target.linkUrl = options.linkUrl;
+        // Auto-detect video → reel for Facebook
+        if (hasVideo) target.mediaType = options?.mediaType ?? 'reel';
         break;
       }
       case 'linkedin':
