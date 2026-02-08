@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - clawdnet
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: clawdagent
+      POSTGRES_PASSWORD: clawdagent
+      POSTGRES_DB: clawdagent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - clawdnet
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - clawdnet
+    restart: unless-stopped
+
+networks:
+  clawdnet:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:

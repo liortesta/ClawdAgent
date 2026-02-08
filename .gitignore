@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+web/node_modules/
+
+# Build
+dist/
+web/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Data
+data/
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
+
+# WhatsApp session
+data/whatsapp-session/
+
+# Coverage
+coverage/
+
+# Drizzle
+drizzle/meta/
+
+# Temp
+*.tmp
+*.bak
+
+# Secrets
+*.pem
+*.key
+credentials.json
+
+# Claude Code
+docs/quality-reports/*.md
+docs/evolution-reports/*.md
+docs/scout-reports/*.md

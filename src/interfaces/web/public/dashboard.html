@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClawdAgent MEGA Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen" x-data="dashboard()" x-init="init()">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between px-6 py-4 bg-gray-800 border-b border-gray-700">
+    <h1 class="text-2xl font-bold tracking-wide">ClawdAgent <span class="text-indigo-400">MEGA Dashboard</span></h1>
+    <button @click="refresh()" class="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 rounded-lg transition">
+      <svg class="w-4 h-4" :class="loading && 'animate-spin'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      Refresh
+    </button>
+  </header>
+
+  <main class="max-w-7xl mx-auto p-6 grid gap-6 md:grid-cols-2">
+
+    <!-- Status Card -->
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+      <h2 class="text-lg font-semibold mb-4 text-gray-300">System Status</h2>
+      <div class="flex items-center gap-3 mb-4">
+        <span class="relative flex h-3 w-3">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" :class="status.status === 'online' ? 'bg-green-400' : 'bg-red-400'"></span>
+          <span class="relative inline-flex rounded-full h-3 w-3" :class="status.status === 'online' ? 'bg-green-500' : 'bg-red-500'"></span>
+        </span>
+        <span class="text-sm font-medium uppercase" x-text="status.status || 'unknown'"></span>
+      </div>
+      <div class="space-y-2 text-sm text-gray-400">
+        <p>Uptime: <span class="text-white" x-text="formatUptime(status.uptime)"></span></p>
+        <p>Heap: <span class="text-white" x-text="mb(status.memory?.heapUsed)"></span> / <span class="text-white" x-text="mb(status.memory?.heapTotal)"></span></p>
+        <p>RSS: <span class="text-white" x-text="mb(status.memory?.rss)"></span></p>
+        <div class="mt-3 w-full bg-gray-700 rounded-full h-2">
+          <div class="bg-indigo-500 h-2 rounded-full transition-all" :style="`width:${heapPct()}%`"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Costs Card -->
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+      <h2 class="text-lg font-semibold mb-4 text-gray-300">Costs &amp; Usage</h2>
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="bg-gray-750 bg-opacity-50 rounded-lg p-3 border border-gray-700">
+          <p class="text-xs text-gray-400 uppercase">Total Cost</p>
+          <p class="text-xl font-bold text-green-400">$<span x-text="(costs.totalCost ?? 0).toFixed(4)"></span></p>
+        </div>
+        <div class="bg-gray-750 bg-opacity-50 rounded-lg p-3 border border-gray-700">
+          <p class="text-xs text-gray-400 uppercase">Total Calls</p>
+          <p class="text-xl font-bold text-indigo-400" x-text="costs.totalCalls ?? 0"></p>
+        </div>
+      </div>
+      <h3 class="text-sm text-gray-400 mb-2">By Model</h3>
+      <div class="space-y-1 text-sm max-h-32 overflow-y-auto">
+        <template x-for="(val, key) in (costs.byModel || {})" :key="key">
+          <div class="flex justify-between">
+            <span class="text-gray-300 truncate" x-text="key"></span>
+            <span class="text-green-400 font-mono">$<span x-text="val.toFixed(4)"></span></span>
+          </div>
+        </template>
+        <p x-show="Object.keys(costs.byModel || {}).length === 0" class="text-gray-500 italic">No model data</p>
+      </div>
+    </div>
+
+    <!-- Cron Tasks Card -->
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+      <h2 class="text-lg font-semibold mb-4 text-gray-300">Scheduled Tasks</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+          <thead class="text-xs text-gray-400 uppercase border-b border-gray-700">
+            <tr><th class="pb-2">Name</th><th class="pb-2">Expression</th><th class="pb-2">Status</th><th class="pb-2">Last Run</th></tr>
+          </thead>
+          <tbody>
+            <template x-for="task in cron" :key="task.id">
+              <tr class="border-b border-gray-700/50">
+                <td class="py-2 text-white" x-text="task.name"></td>
+                <td class="py-2 font-mono text-gray-400" x-text="task.expression"></td>
+                <td class="py-2">
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="task.enabled ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'"
+                    x-text="task.enabled ? 'Active' : 'Disabled'"></span>
+                </td>
+                <td class="py-2 text-gray-400 text-xs" x-text="task.lastRun ? new Date(task.lastRun).toLocaleString() : 'Never'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <p x-show="cron.length === 0" class="text-gray-500 italic text-sm mt-2">No scheduled tasks</p>
+      </div>
+    </div>
+
+    <!-- Containers Card -->
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+      <h2 class="text-lg font-semibold mb-4 text-gray-300">Docker Containers</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+          <thead class="text-xs text-gray-400 uppercase border-b border-gray-700">
+            <tr><th class="pb-2">Name</th><th class="pb-2">Image</th><th class="pb-2">Status</th><th class="pb-2">Ports</th></tr>
+          </thead>
+          <tbody>
+            <template x-for="c in containers" :key="c.id">
+              <tr class="border-b border-gray-700/50">
+                <td class="py-2 text-white" x-text="c.name"></td>
+                <td class="py-2 font-mono text-gray-400 text-xs" x-text="c.image"></td>
+                <td class="py-2">
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="c.status === 'running' ? 'bg-green-900 text-green-300' : 'bg-yellow-900 text-yellow-300'"
+                    x-text="c.status"></span>
+                </td>
+                <td class="py-2 text-gray-400 text-xs" x-text="(c.ports || []).join(', ') || '-'"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <p x-show="containers.length === 0" class="text-gray-500 italic text-sm mt-2">No containers found</p>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="text-center text-xs text-gray-600 py-4">Auto-refreshes every 30s &middot; ClawdAgent</footer>
+
+  <script>
+    function dashboard() {
+      return {
+        loading: false,
+        status: {},
+        costs: {},
+        cron: [],
+        containers: [],
+        timer: null,
+
+        async init() {
+          await this.refresh();
+          this.timer = setInterval(() => this.refresh(), 30000);
+        },
+
+        async refresh() {
+          this.loading = true;
+          await Promise.allSettled([
+            this.fetchJSON('/api/dashboard/status', 'status'),
+            this.fetchJSON('/api/dashboard/costs', 'costs'),
+            this.fetchJSON('/api/dashboard/cron', 'cron'),
+            this.fetchJSON('/api/dashboard/containers', 'containers'),
+          ]);
+          this.loading = false;
+        },
+
+        async fetchJSON(url, key) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(res.statusText);
+            this[key] = await res.json();
+          } catch { /* silently keep stale data */ }
+        },
+
+        formatUptime(sec) {
+          if (!sec) return '-';
+          const d = Math.floor(sec / 86400);
+          const h = Math.floor((sec % 86400) / 3600);
+          const m = Math.floor((sec % 3600) / 60);
+          const s = Math.floor(sec % 60);
+          return (d ? d + 'd ' : '') + h + 'h ' + m + 'm ' + s + 's';
+        },
+
+        mb(bytes) {
+          return bytes ? (bytes / 1048576).toFixed(1) + ' MB' : '-';
+        },
+
+        heapPct() {
+          const u = this.status.memory?.heapUsed;
+          const t = this.status.memory?.heapTotal;
+          return u && t ? ((u / t) * 100).toFixed(1) : 0;
+        }
+      };
+    }
+  </script>
+</body>
+</html>

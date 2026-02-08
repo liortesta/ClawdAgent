@@ -1,0 +1,17 @@
+node_modules
+web/node_modules
+dist
+web/dist
+.git
+.env
+.env.local
+logs
+data
+coverage
+*.md
+!README.md
+.claude
+.mcp.json
+.lsp.json
+docs
+tests

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m json.tool:*)",
+      "Bash(powershell -Command \"Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::OpenRead\\(''c:\\\\Users\\\\lior\\\\Documents\\\\cloude-master-backup.zip''\\).Entries.Count\")",
+      "Bash(powershell -Command:*)",
+      "Bash(powershell -NoProfile -Command:*)",
+      "Bash(powershell:*)",
+      "Bash(xcopy:*)",
+      "Bash(copy:*)"
+    ]
+  }
+}
