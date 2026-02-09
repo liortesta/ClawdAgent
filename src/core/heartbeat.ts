@@ -99,7 +99,7 @@ export class Heartbeat {
     this.registerCheck('auto-upgrade', 24 * 60 * 60_000, () => this.checkUpgrades());
     // Skip initial tick for OpenClaw checks — they're heavy (SSH calls) and conflict with early message processing
     this.registerCheck('openclaw-health', 30 * 60_000, () => this.checkOpenClawHealth(), true);
-    this.registerCheck('openclaw-chat-poll', 5 * 60_000, () => this.pollOpenClawChat(), true);
+    this.registerCheck('openclaw-chat-poll', 60 * 60_000, () => this.pollOpenClawChat(), true);
     this.registerCheck('daily-summary', 5 * 60_000, () => this.checkDailySummary());
 
     this.timer = setInterval(() => this.tick(), tickIntervalMs);
@@ -454,7 +454,10 @@ export class Heartbeat {
     return alerts;
   }
 
-  // ── OpenClaw Chat Polling (every 5 min) ─────────────────────────
+  // ── OpenClaw Chat Polling (every 60 min) ────────────────────────
+  // Only forwards MEANINGFUL updates: cron task results, published posts,
+  // completed automations, real errors. Filters out ALL heartbeat noise,
+  // system prompts, API key warnings, and status check-ins.
   private async pollOpenClawChat(): Promise<HeartbeatAlert[]> {
     if (!this.openclawExecutor) return [];
     const alerts: HeartbeatAlert[] = [];
@@ -476,10 +479,17 @@ export class Heartbeat {
 
       if (activeSessions.length === 0) return [];
 
-      // Step 2: Check chat history for each active session
+      // Step 2: Check chat history — only cron sessions (skip heartbeat entirely)
       const newMessages: Array<{ session: string; role: string; text: string; ts: number }> = [];
 
-      for (const session of activeSessions.slice(0, 3)) { // Max 3 sessions per poll
+      for (const session of activeSessions.slice(0, 5)) {
+        // ── Skip heartbeat sessions entirely — they're ALWAYS noise ──
+        const sessionKey = (session.key || '').toLowerCase();
+        const sessionName = (session.displayName || '').toLowerCase();
+        if (sessionKey.includes('heartbeat') || sessionName.includes('heartbeat')) {
+          continue;
+        }
+
         try {
           const histResult = await this.openclawExecutor('chat_history', {
             sessionKey: session.key,
@@ -494,9 +504,9 @@ export class Heartbeat {
           for (const msg of messages) {
             const ts = msg.timestamp || 0;
             if (ts <= this.openclawLastSeenTs) continue;
-            if (msg.role === 'user') continue; // Skip user inputs
+            if (msg.role === 'user') continue;
 
-            // Extract text from content (could be array of blocks or string)
+            // Extract text from content
             let text = '';
             if (typeof msg.content === 'string') {
               text = msg.content;
@@ -507,64 +517,106 @@ export class Heartbeat {
                 .join('\n');
             }
 
-            if (text) {
-              // Filter out heartbeat/cron noise — don't spam Telegram with these
-              const lowerText = text.toLowerCase();
-              const isNoise =
-                /^(heartbeat|ping|pong|health.?check|alive|ok|running|status.?ok)$/i.test(text.trim()) ||
-                lowerText.includes('heartbeat') ||
-                lowerText.includes('health check passed') ||
-                lowerText.includes('cron completed successfully') ||
-                lowerText.includes('no new messages') ||
-                lowerText.includes('nothing to report') ||
-                (lowerText.includes('cron') && lowerText.includes('ok') && text.length < 50) ||
-                text.trim().length < 5;
+            if (!text || text.trim().length < 10) continue;
 
-              if (isNoise) continue;
+            // ── Aggressive noise filter ──
+            // Skip if it contains ANY of these patterns (system prompts, heartbeat noise, API warnings)
+            const lower = text.toLowerCase();
+            const isNoise =
+              // Heartbeat / status noise
+              lower.includes('heartbeat') ||
+              lower.includes('heartbeatok') ||
+              lower.includes('nothing to report') ||
+              lower.includes('nothing new to report') ||
+              lower.includes('no new messages') ||
+              lower.includes('health check') ||
+              // System prompts / instructions (OpenClaw dumps its own prompt)
+              lower.includes('critical rules') ||
+              lower.includes('do not use the message tool') ||
+              lower.includes('use write tool to save') ||
+              lower.includes('use systemevent tool') ||
+              lower.includes('for the read tool') ||
+              lower.includes('read first') ||
+              lower.includes('check memory/alerts') ||
+              text.includes('# HEARTBEAT') ||
+              // API key warnings
+              lower.includes('api key') && lower.includes('missing') ||
+              lower.includes('apikey') && lower.includes('missing') ||
+              lower.includes('braveapikey') ||
+              lower.includes('brave search api') ||
+              // Generic "I can't" / "I don't know" responses
+              lower.includes('i don\'t have enough information') ||
+              lower.includes('can you please tell me') ||
+              lower.includes('i need credentials') ||
+              // Status-only messages
+              /^(ok|done|running|alive|ping|pong|status.?ok|completed)$/i.test(text.trim());
 
-              const sessionLabel = session.key.includes('cron:')
-                ? `cron ${session.displayName || session.key.split(':').pop()?.slice(0, 8)}`
-                : session.displayName || session.key.split(':').pop() || 'main';
-              newMessages.push({ session: sessionLabel, role: msg.role, text, ts });
-            }
+            if (isNoise) continue;
+
+            // ── Only keep MEANINGFUL messages ──
+            // Must contain evidence of actual work done (posted, created, found, scraped, etc.)
+            const isMeaningful =
+              lower.includes('published') || lower.includes('posted') || lower.includes('sent') ||
+              lower.includes('created') || lower.includes('generated') || lower.includes('found') ||
+              lower.includes('scraped') || lower.includes('analyzed') || lower.includes('completed') ||
+              lower.includes('error') || lower.includes('failed') || lower.includes('warning') ||
+              lower.includes('lead') || lower.includes('trend') || lower.includes('alert') ||
+              lower.includes('new post') || lower.includes('uploaded') || lower.includes('scheduled') ||
+              lower.includes('results') || lower.includes('report') || lower.includes('data') ||
+              sessionKey.includes('cron:'); // Cron results are always potentially interesting
+
+            if (!isMeaningful) continue;
+
+            const sessionLabel = session.key.includes('cron:')
+              ? `\u{23F0} ${session.displayName || session.key.split(':').pop()?.slice(0, 12) || 'cron'}`
+              : session.displayName || session.key.split(':').pop() || 'main';
+
+            // Clean up the text — remove system noise if it leaked in
+            let cleanText = text
+              .replace(/# HEARTBEAT\.md[\s\S]*?(?=\n\n|\n[A-Z])/gi, '')
+              .replace(/## CRITICAL RULES[\s\S]*?(?=\n\n)/gi, '')
+              .replace(/Missing Brave Search API key[^\n]*/gi, '')
+              .replace(/BRAVEAPIKEY is missing[^\n]*/gi, '')
+              .replace(/\n{3,}/g, '\n\n')
+              .trim();
+
+            if (cleanText.length < 10) continue;
+
+            newMessages.push({ session: sessionLabel, role: msg.role, text: cleanText, ts });
           }
         } catch {
           // Skip individual session errors
         }
       }
 
-      if (newMessages.length === 0) {
-        // Still update timestamp to avoid re-checking same sessions
-        const maxUpdated = Math.max(...activeSessions.map((s: any) => s.updatedAt || 0));
-        if (maxUpdated > this.openclawLastSeenTs) this.openclawLastSeenTs = maxUpdated;
-        return [];
-      }
-
-      // Update last-seen timestamp
+      // Update timestamp regardless of whether we found messages
       const allTs = [
         ...newMessages.map(m => m.ts),
         ...activeSessions.map((s: any) => s.updatedAt || 0),
       ];
-      this.openclawLastSeenTs = Math.max(...allTs);
+      const maxTs = Math.max(...allTs);
+      if (maxTs > this.openclawLastSeenTs) this.openclawLastSeenTs = maxTs;
 
-      // Format and send as alert
+      if (newMessages.length === 0) return [];
+
+      // Format as clean, human-readable Hebrew summary
       const summary = newMessages
         .map(m => {
-          const truncated = m.text.slice(0, 400);
-          return `[${m.session}] ${truncated}`;
+          const truncated = m.text.length > 300 ? m.text.slice(0, 300) + '...' : m.text;
+          return `${m.session}:\n${truncated}`;
         })
-        .join('\n\n');
+        .join('\n\n\u2500\u2500\u2500\n\n');
 
       alerts.push({
         type: 'openclaw_health' as any,
         severity: 'low',
-        title: `🦞 OpenClaw עדכון (${newMessages.length} הודעות חדשות)`,
+        title: `\u{1F990} OpenClaw \u2014 ${newMessages.length} \u05E2\u05D3\u05DB\u05D5\u05E0\u05D9\u05DD`,
         message: summary,
         userId: 'admin',
         platform: 'telegram',
       });
 
-      logger.info('OpenClaw chat poll found new messages', { count: newMessages.length });
+      logger.info('OpenClaw chat poll — meaningful messages found', { count: newMessages.length });
     } catch (err: any) {
       logger.debug('OpenClaw chat poll skipped', { error: err.message });
     }
