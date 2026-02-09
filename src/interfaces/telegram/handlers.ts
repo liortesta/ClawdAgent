@@ -149,11 +149,11 @@ export function setupHandlers(bot: Bot, engine: Engine) {
       replyTo: ctx.message.reply_to_message?.text,
     };
 
-    // Detect long-running requests for extended timeout + progress updates
-    // NOTE: \b word boundary does NOT work with Hebrew/Unicode — removed it
-    const textLower = ctx.message.text.toLowerCase();
-    const isLongRunning = /(צור|תיצור|יצר|עשה|תעשה|create|generate|make|הפק|סרטון|וידאו|תמונה|שיר|video|image|photo|music|ugc|kie|publish|פרסם|תפרסם|פרסום|אוטומציה|automation|reels|רילס|content|תעלה|העלה|טיק.?טוק|tiktok|אינסטגרם|אינסטרגם|instagram|פייסבוק|facebook|יוטיוב|youtube|scan|סרוק|תסרוק|health|בריאות|deploy|capabilities|MD|מסמך)/i.test(textLower);
-    const TIMEOUT = isLongRunning ? 540000 : 120000; // 9 min for long ops, 2 min for normal
+    // Almost everything can take 2-9 minutes (server ops, content, multi-tool chains).
+    // Only very short greetings/questions stay on the short timeout.
+    const isQuickChat = /^(hi|hello|hey|שלום|מה קורה|מה נשמע|בוקר טוב|ערב טוב|תודה|thanks|ok|אוקיי|כן|לא|yes|no|\/start|\/help|\/status|\/provider)$/i.test(ctx.message.text.trim());
+    const isLongRunning = !isQuickChat;
+    const TIMEOUT = isLongRunning ? 900000 : 300000; // 15 min for long ops, 5 min for normal
     const startTime = Date.now();
 
     // Keep sending 'typing' indicator every 4s while processing
@@ -161,20 +161,25 @@ export function setupHandlers(bot: Bot, engine: Engine) {
       ctx.replyWithChatAction('typing').catch(() => {});
     }, 4000);
 
-    // ── Progress messages every 30s — prevents Telegram timeout ──
+    // ── Progress messages every 60s — keeps user informed without spam ──
+    // (Typing indicator every 4s already keeps Telegram connection alive)
     let progressCount = 0;
+    const PROGRESS_INTERVAL = 60000; // 60s between progress messages
     const progressInterval = setInterval(async () => {
       progressCount++;
-      const elapsed = progressCount * 30;
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
       const progressMsgs = [
-        `\u{23F3} \u05E2\u05D3\u05D9\u05D9\u05DF \u05E2\u05D5\u05D1\u05D3... (${elapsed}s)`,
-        `\u{23F3} \u05E2\u05D3\u05D9\u05D9\u05DF \u05DE\u05E2\u05D1\u05D3... \u05D6\u05D4 \u05DC\u05D5\u05E7\u05D7 \u05E7\u05E6\u05EA \u05D9\u05D5\u05EA\u05E8 \u05DE\u05D4\u05E8\u05D2\u05D9\u05DC (${elapsed}s)`,
-        `\u{23F3} \u05DE\u05DE\u05E9\u05D9\u05DA \u05DC\u05E2\u05D1\u05D5\u05D3... \u05EA\u05D4\u05DC\u05D9\u05DB\u05D9\u05DD \u05DE\u05D5\u05E8\u05DB\u05D1\u05D9\u05DD \u05DC\u05D5\u05E7\u05D7\u05D9\u05DD \u05D6\u05DE\u05DF (${elapsed}s)`,
-        `\u{23F3} \u05E2\u05D3\u05D9\u05D9\u05DF \u05DB\u05D0\u05DF, \u05E2\u05D5\u05D1\u05D3 \u05D1\u05E8\u05E7\u05E2... (${elapsed}s)`,
+        `\u{23F3} \u05E2\u05D3\u05D9\u05D9\u05DF \u05E2\u05D5\u05D1\u05D3... (${timeStr})`,
+        `\u{23F3} \u05E2\u05D3\u05D9\u05D9\u05DF \u05DE\u05E2\u05D1\u05D3... \u05D6\u05D4 \u05DC\u05D5\u05E7\u05D7 \u05E7\u05E6\u05EA \u05D9\u05D5\u05EA\u05E8 \u05DE\u05D4\u05E8\u05D2\u05D9\u05DC (${timeStr})`,
+        `\u{23F3} \u05DE\u05DE\u05E9\u05D9\u05DA \u05DC\u05E2\u05D1\u05D5\u05D3... \u05EA\u05D4\u05DC\u05D9\u05DB\u05D9\u05DD \u05DE\u05D5\u05E8\u05DB\u05D1\u05D9\u05DD \u05DC\u05D5\u05E7\u05D7\u05D9\u05DD \u05D6\u05DE\u05DF (${timeStr})`,
+        `\u{23F3} \u05E2\u05D3\u05D9\u05D9\u05DF \u05DB\u05D0\u05DF, \u05E2\u05D5\u05D1\u05D3 \u05D1\u05E8\u05E7\u05E2... (${timeStr})`,
       ];
       const msg = progressMsgs[Math.min(progressCount - 1, progressMsgs.length - 1)];
       await ctx.reply(msg).catch(() => {});
-    }, 30000);
+    }, PROGRESS_INTERVAL);
 
     // Start engine processing — keep promise reference for background delivery
     const processPromise = engine.process(incoming);
