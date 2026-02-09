@@ -66,6 +66,14 @@ const configSchema = z.object({
   TWILIO_PHONE_NUMBER: z.string().optional(),
   // Kie.ai (AI content generation)
   KIE_AI_API_KEY: z.string().optional(),
+  // ElevenLabs (TTS, voice cloning, podcasts, dubbing)
+  ELEVENLABS_API_KEY: z.string().optional(),
+  // Firecrawl (smart web scraping → clean markdown)
+  FIRECRAWL_API_KEY: z.string().optional(),
+  // RapidAPI (40,000+ APIs search & call)
+  RAPIDAPI_KEY: z.string().optional(),
+  // Apify (ready-made scrapers & actors)
+  APIFY_API_TOKEN: z.string().optional(),
   // Blotato (social media publishing)
   BLOTATO_API_KEY: z.string().optional(),
   BLOTATO_ACCOUNT_TWITTER: z.string().optional(),

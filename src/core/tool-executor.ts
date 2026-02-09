@@ -16,6 +16,10 @@ import { WorkflowTool } from '../agents/tools/workflow-tool.js';
 import { AnalyticsTool } from '../agents/tools/analytics-tool.js';
 import { ClaudeCodeTool } from '../agents/tools/claude-code-tool.js';
 import { DeviceTool } from '../agents/tools/device-tool.js';
+import { ElevenLabsTool } from '../agents/tools/elevenlabs-tool.js';
+import { FirecrawlTool } from '../agents/tools/firecrawl-tool.js';
+import { RapidApiTool } from '../agents/tools/rapidapi-tool.js';
+import { ApifyTool } from '../agents/tools/apify-tool.js';
 import { BaseTool, ToolResult } from '../agents/tools/base-tool.js';
 import logger from '../utils/logger.js';
 
@@ -43,6 +47,10 @@ export function initTools(): void {
   toolInstances.set('analytics', new AnalyticsTool());
   toolInstances.set('claude-code', new ClaudeCodeTool());
   toolInstances.set('device', new DeviceTool());
+  toolInstances.set('elevenlabs', new ElevenLabsTool());
+  toolInstances.set('firecrawl', new FirecrawlTool());
+  toolInstances.set('rapidapi', new RapidApiTool());
+  toolInstances.set('apify', new ApifyTool());
   initialized = true;
   logger.info('Tool executor initialized', { tools: Array.from(toolInstances.keys()) });
 }
@@ -443,6 +451,103 @@ export function getToolDefinitions(allowedTools: string[]): any[] {
     });
   }
 
+  if (allowedTools.includes('elevenlabs')) {
+    definitions.push({
+      name: 'elevenlabs',
+      description: 'ElevenLabs audio platform — TTS (140+ voices, Hebrew!), voice cloning, podcasts, dubbing, sound effects, speech-to-text, audio isolation. Actions: tts(text, voice?, model?, language?), voices(), clone_voice(name, files[], description?), podcast(script[{speaker,voice,text}], title?), dub(source_url, target_lang), sfx(text, duration?), stt(audio_url, language?), isolate(audio_url).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['tts', 'voices', 'clone_voice', 'podcast', 'dub', 'sfx', 'stt', 'isolate'], description: 'ElevenLabs action' },
+          text: { type: 'string' as const, description: 'Text for TTS or SFX description' },
+          voice: { type: 'string' as const, description: 'Voice name (Rachel, Adam, Bella, Antoni, Elli, Josh, Sam) or voice_id' },
+          model: { type: 'string' as const, description: 'Model: eleven_multilingual_v2 (Hebrew!), eleven_turbo_v2' },
+          language: { type: 'string' as const, description: 'Language code: he, en, es, etc.' },
+          name: { type: 'string' as const, description: 'Voice name for cloning' },
+          files: { type: 'array' as const, items: { type: 'string' as const }, description: 'Audio file URLs for voice cloning (30s min)' },
+          description: { type: 'string' as const, description: 'Voice description' },
+          script: { type: 'array' as const, items: { type: 'object' as const }, description: 'Podcast script segments [{speaker, voice, text}]' },
+          title: { type: 'string' as const, description: 'Podcast title' },
+          source_url: { type: 'string' as const, description: 'Source audio/video URL for dubbing' },
+          target_lang: { type: 'string' as const, description: 'Target language for dubbing (he, en, es)' },
+          duration: { type: 'number' as const, description: 'Duration in seconds (for SFX)' },
+          audio_url: { type: 'string' as const, description: 'Audio URL (for STT, isolate)' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  if (allowedTools.includes('firecrawl')) {
+    definitions.push({
+      name: 'firecrawl',
+      description: 'Smart web scraping via Firecrawl — scrape any page to clean markdown (AI-ready!), crawl entire sites, search Google + scrape results, extract structured data with AI, map site URLs. Handles JS rendering, popups, cookie banners. Actions: scrape(url), crawl(url, max_pages?), search(query, limit?, scrape_results?), extract(url, schema, prompt?), map(url).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['scrape', 'crawl', 'search', 'extract', 'map'], description: 'Firecrawl action' },
+          url: { type: 'string' as const, description: 'URL to scrape/crawl/extract/map' },
+          formats: { type: 'array' as const, items: { type: 'string' as const }, description: 'Output formats: markdown, html, links, screenshot (default: [markdown])' },
+          only_main_content: { type: 'boolean' as const, description: 'Only main content, no nav/footer (default: true)' },
+          wait_for: { type: 'number' as const, description: 'Wait ms for JS rendering' },
+          max_pages: { type: 'number' as const, description: 'Max pages to crawl (default: 10)' },
+          query: { type: 'string' as const, description: 'Search query (for search action)' },
+          limit: { type: 'number' as const, description: 'Number of search results (default: 5)' },
+          scrape_results: { type: 'boolean' as const, description: 'Scrape each search result page (default: false)' },
+          schema: { type: 'object' as const, description: 'JSON schema for data extraction' },
+          prompt: { type: 'string' as const, description: 'AI prompt for extraction guidance' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  if (allowedTools.includes('rapidapi')) {
+    definitions.push({
+      name: 'rapidapi',
+      description: 'Search and call 40,000+ APIs via RapidAPI. Find any API you need (social media scrapers, weather, translation, finance, AI). Actions: search(query) — find APIs, call(host, endpoint, method?, params?, body?) — call any API, info(api_name) — get API details, popular(category?) — list free APIs by category (social, data, finance, weather, translation, ai).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['search', 'call', 'info', 'popular'], description: 'RapidAPI action' },
+          query: { type: 'string' as const, description: 'Search query (for search)' },
+          api_name: { type: 'string' as const, description: 'API name (for info)' },
+          host: { type: 'string' as const, description: 'API host (e.g. instagram-scraper-api2.p.rapidapi.com)' },
+          endpoint: { type: 'string' as const, description: 'API endpoint path (e.g. /user/info?username=x)' },
+          method: { type: 'string' as const, description: 'HTTP method: GET, POST, PUT, DELETE (default: GET)' },
+          params: { type: 'object' as const, description: 'Query parameters object' },
+          body: { type: 'object' as const, description: 'Request body (for POST/PUT)' },
+          category: { type: 'string' as const, description: 'Category filter: social, data, finance, weather, translation, ai' },
+          sort_by: { type: 'string' as const, description: 'Sort: popularity, rating, newest' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  if (allowedTools.includes('apify')) {
+    definitions.push({
+      name: 'apify',
+      description: 'Run ready-made scrapers and automation actors via Apify. Scrape Facebook, Instagram, TikTok, Twitter, YouTube, LinkedIn, Amazon, Google Maps, any website. Actions: search(query) — find actors, run(actor_id, input, wait?, timeout?) — run an actor, results(run_id, limit?) — get results, info(actor_id) — actor details, popular(category?) — list popular actors (social-media, e-commerce, data).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['search', 'run', 'results', 'info', 'popular'], description: 'Apify action' },
+          query: { type: 'string' as const, description: 'Search query (for search)' },
+          actor_id: { type: 'string' as const, description: 'Actor ID (e.g. apify/facebook-posts-scraper)' },
+          input: { type: 'object' as const, description: 'Actor input configuration' },
+          wait: { type: 'boolean' as const, description: 'Wait for results (default: true)' },
+          timeout: { type: 'number' as const, description: 'Timeout seconds (default: 120)' },
+          run_id: { type: 'string' as const, description: 'Run ID (for results)' },
+          format: { type: 'string' as const, description: 'Output format: json, csv (default: json)' },
+          limit: { type: 'number' as const, description: 'Max results to return (default: 50)' },
+          category: { type: 'string' as const, description: 'Category: social-media, e-commerce, data' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
   return definitions;
 }
 
@@ -459,6 +564,10 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   'openclaw': 30000,      // 30s — bridge call
   'auto': 300000,         // 5min — multi-step autonomous
   'device': 30000,         // 30s — ADB/Appium commands
+  'elevenlabs': 60000,    // 60s — TTS/audio generation
+  'firecrawl': 60000,     // 60s — crawling can be slow
+  'rapidapi': 30000,      // 30s — API calls
+  'apify': 180000,        // 3min — actor runs can take time
 };
 const DEFAULT_TOOL_TIMEOUT = 30000; // 30s default
 

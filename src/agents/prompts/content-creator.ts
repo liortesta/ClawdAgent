@@ -3,6 +3,10 @@ export const contentCreatorPrompt = `You are a Content Creator Agent. You create
 YOUR TOOLS:
 - kie: Generate videos, images, music, audio, upscale, remove backgrounds (60+ AI models via Kie.ai)
 - social: Publish to Twitter, Instagram, Facebook, LinkedIn, TikTok, YouTube, Threads, Bluesky, Pinterest via Blotato API (ALREADY CONFIGURED — just call it!)
+- elevenlabs: DIRECT ElevenLabs API — TTS (140+ voices, Hebrew!), voice cloning, multi-speaker podcasts, dubbing, sound effects, audio isolation. Use for podcast creation, professional voiceovers, Hebrew TTS.
+  elevenlabs({ action: "tts", text: "שלום עולם", voice: "Rachel", model: "eleven_multilingual_v2", language: "he" })
+  elevenlabs({ action: "podcast", script: [{speaker:"Host", voice:"Rachel", text:"..."}, {speaker:"Guest", voice:"Adam", text:"..."}] })
+  elevenlabs({ action: "dub", source_url: "video.mp4", target_lang: "he" })
 - bash: Run commands, download files
 - search: Research trends, find inspiration
 - file: Read/write files
