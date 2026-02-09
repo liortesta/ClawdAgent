@@ -149,45 +149,97 @@ export function setupHandlers(bot: Bot, engine: Engine) {
       replyTo: ctx.message.reply_to_message?.text,
     };
 
-    // Detect content-creation requests for extended timeout + progress updates
+    // Detect long-running requests for extended timeout + progress updates
     // NOTE: \b word boundary does NOT work with Hebrew/Unicode — removed it
     const textLower = ctx.message.text.toLowerCase();
-    const isContentCreation = /(צור|תיצור|יצר|עשה|תעשה|create|generate|make|הפק|סרטון|וידאו|תמונה|שיר|video|image|photo|music|ugc|kie|publish|פרסם|תפרסם|פרסום|אוטומציה|automation|reels|רילס|content|תעלה|העלה|טיק.?טוק|tiktok|אינסטגרם|אינסטרגם|instagram|פייסבוק|facebook|יוטיוב|youtube)/i.test(textLower);
-    const TIMEOUT = isContentCreation ? 420000 : 120000; // 7 min for content (kie generation + social publishing), 2 min for normal
+    const isLongRunning = /(צור|תיצור|יצר|עשה|תעשה|create|generate|make|הפק|סרטון|וידאו|תמונה|שיר|video|image|photo|music|ugc|kie|publish|פרסם|תפרסם|פרסום|אוטומציה|automation|reels|רילס|content|תעלה|העלה|טיק.?טוק|tiktok|אינסטגרם|אינסטרגם|instagram|פייסבוק|facebook|יוטיוב|youtube|scan|סרוק|תסרוק|health|בריאות|deploy|capabilities|MD|מסמך)/i.test(textLower);
+    const TIMEOUT = isLongRunning ? 540000 : 120000; // 9 min for long ops, 2 min for normal
+    const startTime = Date.now();
 
     // Keep sending 'typing' indicator every 4s while processing
     const typingInterval = setInterval(() => {
       ctx.replyWithChatAction('typing').catch(() => {});
     }, 4000);
 
-    // Send progress message if processing takes > 15s
-    let progressSent = false;
-    const progressTimer = isContentCreation ? setTimeout(async () => {
-      progressSent = true;
-      await ctx.reply('🎨 Working on it — creating content can take 1-3 minutes. I\'ll send the result when it\'s ready...').catch(() => {});
-    }, 15000) : null;
+    // ── Progress messages every 30s — prevents Telegram timeout ──
+    let progressCount = 0;
+    const progressInterval = setInterval(async () => {
+      progressCount++;
+      const elapsed = progressCount * 30;
+      const progressMsgs = [
+        `\u{23F3} \u05E2\u05D3\u05D9\u05D9\u05DF \u05E2\u05D5\u05D1\u05D3... (${elapsed}s)`,
+        `\u{23F3} \u05E2\u05D3\u05D9\u05D9\u05DF \u05DE\u05E2\u05D1\u05D3... \u05D6\u05D4 \u05DC\u05D5\u05E7\u05D7 \u05E7\u05E6\u05EA \u05D9\u05D5\u05EA\u05E8 \u05DE\u05D4\u05E8\u05D2\u05D9\u05DC (${elapsed}s)`,
+        `\u{23F3} \u05DE\u05DE\u05E9\u05D9\u05DA \u05DC\u05E2\u05D1\u05D5\u05D3... \u05EA\u05D4\u05DC\u05D9\u05DB\u05D9\u05DD \u05DE\u05D5\u05E8\u05DB\u05D1\u05D9\u05DD \u05DC\u05D5\u05E7\u05D7\u05D9\u05DD \u05D6\u05DE\u05DF (${elapsed}s)`,
+        `\u{23F3} \u05E2\u05D3\u05D9\u05D9\u05DF \u05DB\u05D0\u05DF, \u05E2\u05D5\u05D1\u05D3 \u05D1\u05E8\u05E7\u05E2... (${elapsed}s)`,
+      ];
+      const msg = progressMsgs[Math.min(progressCount - 1, progressMsgs.length - 1)];
+      await ctx.reply(msg).catch(() => {});
+    }, 30000);
 
+    // Start engine processing — keep promise reference for background delivery
+    const processPromise = engine.process(incoming);
     let response: Awaited<ReturnType<typeof engine.process>>;
+
     try {
       response = await Promise.race([
-        engine.process(incoming),
+        processPromise,
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('RESPONSE_TIMEOUT')), TIMEOUT)
         ),
       ]);
     } catch (err: any) {
-      clearInterval(typingInterval);
-      if (progressTimer) clearTimeout(progressTimer);
       if (err.message === 'RESPONSE_TIMEOUT') {
-        logger.warn('Engine response timed out', { userId: incoming.userId, text: incoming.text.slice(0, 50), timeout: TIMEOUT });
-        await ctx.reply(`\u{23F1}\u{FE0F} The request timed out after ${TIMEOUT / 1000}s. Try again or simplify the request.`).catch(() => {});
-        return;
+        logger.warn('Engine response timed out, continuing in background', {
+          userId: incoming.userId, text: incoming.text.slice(0, 50), timeout: TIMEOUT,
+        });
+        await ctx.reply(
+          `\u{23F3} \u05D4\u05E4\u05E2\u05D5\u05DC\u05D4 \u05DC\u05D5\u05E7\u05D7\u05EA \u05D9\u05D5\u05EA\u05E8 \u05DE-${Math.round(TIMEOUT / 1000)} \u05E9\u05E0\u05D9\u05D5\u05EA. \u05DE\u05DE\u05E9\u05D9\u05DA \u05D1\u05E8\u05E7\u05E2 \u2014 \u05D0\u05E9\u05DC\u05D7 \u05EA\u05D5\u05E6\u05D0\u05D4 \u05DB\u05E9\u05EA\u05D4\u05D9\u05D4 \u05DE\u05D5\u05DB\u05E0\u05D4...`
+        ).catch(() => {});
+
+        // ── Background delivery: keep waiting, send result when done ──
+        processPromise
+          .then(async (bgResult) => {
+            clearInterval(typingInterval);
+            clearInterval(progressInterval);
+
+            if (!bgResult.text || bgResult.text.trim().length === 0) {
+              bgResult.text = '\u05E2\u05D9\u05D1\u05D3\u05EA\u05D9 \u05D0\u05EA \u05D4\u05D1\u05E7\u05E9\u05D4 \u05D0\u05D1\u05DC \u05D0\u05D9\u05DF \u05DC\u05D9 \u05DE\u05D4 \u05DC\u05D4\u05D2\u05D9\u05D3. \u05E0\u05E1\u05D4 \u05DC\u05E0\u05E1\u05D7 \u05D0\u05D7\u05E8\u05EA.';
+            }
+
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            const header = `\u{2705} \u05E1\u05D9\u05D9\u05DE\u05EA\u05D9! (\u05DC\u05E7\u05D7 ${elapsed} \u05E9\u05E0\u05D9\u05D5\u05EA)\n\n`;
+            const fullText = header + bgResult.text;
+
+            const maxLen = 4000;
+            if (fullText.length <= maxLen) {
+              await ctx.reply(fullText, { parse_mode: 'Markdown' }).catch(() => ctx.reply(fullText));
+            } else {
+              const chunks = splitMessage(fullText, maxLen);
+              for (const chunk of chunks) {
+                await ctx.reply(chunk, { parse_mode: 'Markdown' }).catch(() => ctx.reply(chunk));
+              }
+            }
+          })
+          .catch((bgErr) => {
+            logger.error('Background processing failed', { error: bgErr.message });
+            ctx.reply(`\u{274C} \u05D4\u05E4\u05E2\u05D5\u05DC\u05D4 \u05D1\u05E8\u05E7\u05E2 \u05E0\u05DB\u05E9\u05DC\u05D4: ${bgErr.message}`).catch(() => {});
+          })
+          .finally(() => {
+            clearInterval(typingInterval);
+            clearInterval(progressInterval);
+          });
+
+        return; // Exit handler — background will deliver the result
       }
-      throw err;
-    } finally {
+      // Non-timeout error
       clearInterval(typingInterval);
-      if (progressTimer) clearTimeout(progressTimer);
+      clearInterval(progressInterval);
+      throw err;
     }
+
+    // ── Normal completion (before timeout) ──
+    clearInterval(typingInterval);
+    clearInterval(progressInterval);
 
     // Guard against empty responses
     if (!response.text || response.text.trim().length === 0) {
