@@ -20,6 +20,7 @@ import { ElevenLabsTool } from '../agents/tools/elevenlabs-tool.js';
 import { FirecrawlTool } from '../agents/tools/firecrawl-tool.js';
 import { RapidApiTool } from '../agents/tools/rapidapi-tool.js';
 import { ApifyTool } from '../agents/tools/apify-tool.js';
+import { SSHTool } from '../agents/tools/ssh-tool.js';
 import { BaseTool, ToolResult } from '../agents/tools/base-tool.js';
 import logger from '../utils/logger.js';
 
@@ -51,6 +52,7 @@ export function initTools(): void {
   toolInstances.set('firecrawl', new FirecrawlTool());
   toolInstances.set('rapidapi', new RapidApiTool());
   toolInstances.set('apify', new ApifyTool());
+  toolInstances.set('ssh', new SSHTool());
   initialized = true;
   logger.info('Tool executor initialized', { tools: Array.from(toolInstances.keys()) });
 }
@@ -548,6 +550,34 @@ export function getToolDefinitions(allowedTools: string[]): any[] {
     });
   }
 
+  if (allowedTools.includes('ssh')) {
+    definitions.push({
+      name: 'ssh',
+      description: 'Multi-server SSH management. Connect to servers, execute commands, scan/discover capabilities, health monitoring, file transfer, cross-server workflows. Actions: add_server(id, host, user, keyPath, name?, port?, workDir?, tags?), remove_server(id), list_servers(), connect(serverId), disconnect(serverId), switch(serverId), active(), status(), exec(serverId?, command), exec_all(command), scan(serverId), scan_all(), upload(serverId, localPath, remotePath), download(serverId, remotePath, localPath), health(serverId), health_all(), workflow_run(steps[], variables?).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['add_server', 'remove_server', 'list_servers', 'connect', 'disconnect', 'switch', 'active', 'status', 'exec', 'exec_all', 'scan', 'scan_all', 'upload', 'download', 'health', 'health_all', 'workflow_run'], description: 'SSH action' },
+          serverId: { type: 'string' as const, description: 'Server ID (e.g. "vps1", "dev")' },
+          id: { type: 'string' as const, description: 'Server ID for add/remove' },
+          host: { type: 'string' as const, description: 'Server host (user@host:port or just IP)' },
+          user: { type: 'string' as const, description: 'SSH user (e.g. "root")' },
+          keyPath: { type: 'string' as const, description: 'Path to SSH private key' },
+          name: { type: 'string' as const, description: 'Display name for server' },
+          port: { type: 'number' as const, description: 'SSH port (default: 22)' },
+          workDir: { type: 'string' as const, description: 'Default working directory on server' },
+          tags: { type: 'string' as const, description: 'Comma-separated tags (e.g. "production,nodejs")' },
+          command: { type: 'string' as const, description: 'Command to execute via SSH' },
+          localPath: { type: 'string' as const, description: 'Local file path (for upload/download)' },
+          remotePath: { type: 'string' as const, description: 'Remote file path (for upload/download)' },
+          steps: { type: 'array' as const, items: { type: 'object' as const }, description: 'Workflow steps [{server, name, command, saveOutput?, onError}]' },
+          variables: { type: 'object' as const, description: 'Template variables for workflow ({{key}} replacement)' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
   return definitions;
 }
 
@@ -568,6 +598,7 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   'firecrawl': 60000,     // 60s — crawling can be slow
   'rapidapi': 30000,      // 30s — API calls
   'apify': 180000,        // 3min — actor runs can take time
+  'ssh': 120000,           // 2min — scans can take time
 };
 const DEFAULT_TOOL_TIMEOUT = 30000; // 30s default
 

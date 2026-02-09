@@ -51,6 +51,22 @@ const configSchema = z.object({
   DEFAULT_SSH_SERVER: z.string().optional(),  // e.g. "root@37.60.225.76" — all bash commands auto-SSH to this server
   DEFAULT_SSH_KEY_PATH: z.string().optional(),  // e.g. "C:/Users/lior/.ssh/clawdagent_key" — SSH private key for auto-SSH
   SSH_ENABLED: z.string().default('false').transform(v => v === 'true'),
+  // Multi-server SSH (pipe-separated: id|name|user@host:port|keyPath|workDir|tag1,tag2)
+  SSH_SERVER_1: z.string().optional(),
+  SSH_SERVER_2: z.string().optional(),
+  SSH_SERVER_3: z.string().optional(),
+  SSH_SERVER_4: z.string().optional(),
+  SSH_SERVER_5: z.string().optional(),
+  SSH_SERVER_6: z.string().optional(),
+  SSH_SERVER_7: z.string().optional(),
+  SSH_SERVER_8: z.string().optional(),
+  SSH_SERVER_9: z.string().optional(),
+  SSH_SERVER_10: z.string().optional(),
+  // Server health monitoring
+  SERVER_HEALTH_INTERVAL: z.coerce.number().default(300),
+  SERVER_HEALTH_ALERTS: z.string().default('true').transform(v => v === 'true'),
+  SERVER_AUTO_SCAN: z.string().default('true').transform(v => v === 'true'),
+  SERVER_SCAN_DEPTH: z.coerce.number().default(3),
   JWT_SECRET: z.string().min(32).default('change-this-to-a-real-secret-at-least-32-chars'),
   ENCRYPTION_KEY: z.string().min(32).default('change-this-to-a-real-key-at-least-32-chars'),
   RATE_LIMIT_MAX: z.coerce.number().default(30),

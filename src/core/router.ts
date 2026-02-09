@@ -45,6 +45,9 @@ export enum Intent {
   UGC_CREATE = 'ugc_create',
   PODCAST_CREATE = 'podcast_create',
   SITE_ANALYZE = 'site_analyze',
+  SERVER_MANAGE = 'server_manage',
+  SERVER_HEALTH = 'server_health',
+  SERVER_SCAN = 'server_scan',
 }
 
 export interface RoutingResult {
@@ -99,6 +102,9 @@ Available intents:
 - ugc_create: Create UGC (User Generated Content) — product showcase, AI influencer, brand content, UGC video, תוכן UGC, צור UGC, תיצור UGC, מוצר, שיווק, brand video, product video
 - podcast_create: Create podcast, audio show, multi-speaker conversation — פודקאסט, תיצור פודקאסט, podcast, audio show, שיחה, דיון, דיבייט, ראיון, interview
 - site_analyze: Analyze a website, build a clone, compare sites, tech stack analysis — תנתח אתר, נתח אתר, analyze site, analyze website, site analysis, תבנה אתר דומה, clone site, מה הטכנולוגיה של, tech stack
+- server_manage: Manage SSH servers — add, remove, connect, list servers, switch between servers, execute on specific server, upload/download files — תתחבר לשרת, חבר שרת, שרתים, servers, תוסיף שרת, add server, switch server, תעלה קובץ לשרת, /servers
+- server_health: Check server health, monitor servers, CPU/RAM/disk usage — בריאות שרת, health check, server health, מצב השרתים, how are my servers, תבדוק את כל השרתים, /health
+- server_scan: Scan/discover what's on a server — capabilities, tools, projects, databases — תסרוק שרת, scan server, מה יש בשרת, what's on the server, discover, תגלה מה רץ, /server scan
 
 Hebrew examples:
 - "מה מצב השרת" → server_status
@@ -137,6 +143,11 @@ Hebrew examples:
 - "תנתח את האתר הזה" → site_analyze
 - "מה הטכנולוגיה של wix.com" → site_analyze
 - "תבנה לי אתר דומה ל..." → site_analyze
+- "תתחבר לשרת root@10.0.0.5" → server_manage
+- "הראה את כל השרתים" → server_manage
+- "מה הבריאות של השרתים" → server_health
+- "תסרוק את השרת" → server_scan
+- "מה יש על השרת" → server_scan
 
 Respond ONLY with valid JSON (no markdown, no text before/after):
 {"intent":"<intent_name>","confidence":<0.0-1.0>,"agent":"<best_agent>","params":{"key":"value"}}
@@ -144,7 +155,8 @@ Respond ONLY with valid JSON (no markdown, no text before/after):
 Agent options: server-manager, code-assistant, researcher, task-planner, general, desktop-controller, project-builder, web-agent, content-creator, orchestrator, device-controller
 
 For ugc_create and podcast_create → use content-creator agent.
-For site_analyze → use orchestrator agent.`;
+For site_analyze → use orchestrator agent.
+For server_manage, server_health, server_scan → use server-manager agent.`;
 
 export class IntentRouter {
   private ai: AIClient;
@@ -231,7 +243,22 @@ export class IntentRouter {
       return { intent: Intent.WORKFLOW, confidence: 0.8, agentId: 'content-creator', extractedParams: {} };
     }
 
-    // Server management
+    // Server health check
+    if (/בריאות.*שרת|health.*server|server.*health|מצב.*השרתים|how.*are.*servers|\/health/i.test(message)) {
+      return { intent: Intent.SERVER_HEALTH, confidence: 0.9, agentId: 'server-manager', extractedParams: {} };
+    }
+
+    // Server scan / discovery
+    if (/תסרוק.*שרת|scan.*server|מה.*יש.*בשרת|what.*on.*server|discover|תגלה.*מה.*רץ|\/server.*scan/i.test(message)) {
+      return { intent: Intent.SERVER_SCAN, confidence: 0.9, agentId: 'server-manager', extractedParams: {} };
+    }
+
+    // Server management (connect, add, list, switch, upload, download)
+    if (/תתחבר.*לשרת|connect.*server|add.*server|תוסיף.*שרת|list.*server|השרתים|\/servers|switch.*server|החלף.*שרת|תעלה.*קובץ.*לשרת|upload.*server|download.*server/i.test(message)) {
+      return { intent: Intent.SERVER_MANAGE, confidence: 0.9, agentId: 'server-manager', extractedParams: {} };
+    }
+
+    // General server operations (status, deploy, docker, ssh)
     if (/שרת|server|deploy|docker|ssh|uptime|מצב.*שרת|תתקן.*שרת/i.test(message)) {
       return { intent: Intent.SERVER_STATUS, confidence: 0.7, agentId: 'server-manager', extractedParams: {} };
     }
