@@ -9,9 +9,47 @@ services:
     volumes:
       - ./src:/app/src
       - ./web:/app/web
-      - ./logs:/app/logs
       - ./data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/logs
     command: pnpm dev
     ports:
       - "3000:3000"
       - "5173:5173"
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://clawdagent:clawdagent@postgres:5432/clawdagent
+      - REDIS_URL=redis://redis:6379
+    networks:
+      - clawdnet
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: clawdagent
+      POSTGRES_PASSWORD: clawdagent
+      POSTGRES_DB: clawdagent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - clawdnet
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - clawdnet
+
+networks:
+  clawdnet:
+    driver: bridge
+
+volumes:
+  pgdata:

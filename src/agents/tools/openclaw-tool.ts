@@ -131,7 +131,7 @@ export class OpenClawTool extends BaseTool {
     if (!server) throw new Error('SSH not configured');
     const keyFlag = config.DEFAULT_SSH_KEY_PATH ? `-i "${config.DEFAULT_SSH_KEY_PATH}" ` : '';
     const escaped = command.replace(/"/g, '\\"');
-    const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${keyFlag}${server} "${escaped}"`;
+    const sshCmd = `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${keyFlag}${server} "${escaped}"`;
     const { stdout } = await execAsync(sshCmd, { timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024 });
     return stdout.trim();
   }

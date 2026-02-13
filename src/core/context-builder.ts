@@ -1,5 +1,19 @@
 import { Message } from './claude-client.js';
 
+export interface EvolutionContext {
+  phase: string;
+  totalSkills: number;
+  totalAgents?: number;
+  dynamicAgents?: number;
+  lastEvolution?: string | null;
+  healthIndex?: number;                 // System Intelligence Index 0-100
+  governanceBudget?: string;            // e.g. "$4.50/$10.00"
+  activeGoals?: number;
+  pendingSelfTasks?: number;
+  disabledAgents?: string[];            // Agents auto-disabled by scorer
+  costToday?: number;                   // USD spent today
+}
+
 export interface FullContext {
   history: Message[];
   knowledge: string;
@@ -10,6 +24,7 @@ export interface FullContext {
   providers?: string[];
   knowledgeCount?: number;
   goals?: string;
+  evolution?: EvolutionContext;
 }
 
 export function buildSystemPromptWithContext(
@@ -87,11 +102,28 @@ export function buildSystemPromptWithContext(
       kie: '`kie` — AI Content Generation (Kie.ai). Generate videos (Kling, Veo3, Runway, Wan), images (4o, Midjourney, Flux, Grok), music (Suno). Use for creating marketing content, UGC videos, thumbnails.',
       social: '`social` — Publish to social media (Blotato). Post to Twitter, Instagram, Facebook, LinkedIn, TikTok, YouTube, Threads, Bluesky, Pinterest. Cross-post, schedule, threads.',
       openclaw: '`openclaw` — Bridge to OpenClaw on the server. Send WhatsApp/Facebook messages, run OpenClaw agents, manage cron jobs, list sessions, check health. Use for anything that needs OpenClaw\'s messaging channels or automation.',
+      whatsapp: '`whatsapp` — WhatsApp connection management. Actions: get_qr (returns QR code image as data URL for the user to scan and connect WhatsApp), get_status (check connection status). When user asks to connect WhatsApp, IMMEDIATELY call this tool with action: "get_qr".',
     };
     for (const tool of context.activeTools) {
       if (toolDescriptions[tool]) parts.push(`- ${toolDescriptions[tool]}`);
     }
     parts.push(`\n**You MUST use these tools when the user asks you to DO something. NEVER say "I can't" — call the tool instead.**`);
+  }
+
+  // Self-evolution status
+  if (context.fullContext.evolution) {
+    const evo = context.fullContext.evolution;
+    parts.push(`\n## Self-Evolution Status`);
+    parts.push(`- Phase: ${evo.phase}`);
+    parts.push(`- Total Skills: ${evo.totalSkills}${evo.totalAgents ? ` | Agents: ${evo.totalAgents}${evo.dynamicAgents ? ` (${evo.dynamicAgents} dynamic)` : ''}` : ''}`);
+    if (evo.lastEvolution) parts.push(`- Last Evolution: ${evo.lastEvolution}`);
+    if (evo.healthIndex !== undefined) parts.push(`- System Intelligence Index: ${evo.healthIndex}/100`);
+    if (evo.governanceBudget) parts.push(`- Risk Budget: ${evo.governanceBudget}`);
+    if (evo.activeGoals) parts.push(`- Active Strategic Goals: ${evo.activeGoals}`);
+    if (evo.pendingSelfTasks) parts.push(`- Pending Self-Initiated Tasks: ${evo.pendingSelfTasks}`);
+    if (evo.costToday !== undefined) parts.push(`- Cost Today: $${evo.costToday.toFixed(4)}`);
+    if (evo.disabledAgents?.length) parts.push(`- Disabled Agents: ${evo.disabledAgents.join(', ')}`);
+    parts.push(`- I can create new agents dynamically, fetch skills from GitHub, learn server capabilities, run multi-agent crews, track costs, manage risk budgets, and self-optimize.`);
   }
 
   parts.push(`\n## IMPORTANT RULES`);

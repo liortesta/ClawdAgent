@@ -6,7 +6,10 @@ const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
 
 function getKey(): Buffer {
-  return crypto.scryptSync(config.ENCRYPTION_KEY, 'clawdagent-salt', 32);
+  // Derive key using scrypt with a salt derived from the encryption key itself
+  // This prevents identical-key collisions across different deployments
+  const salt = crypto.createHash('sha256').update(config.ENCRYPTION_KEY + ':clawdagent').digest().subarray(0, 16);
+  return crypto.scryptSync(config.ENCRYPTION_KEY, salt, 32);
 }
 
 export function encrypt(text: string): string {

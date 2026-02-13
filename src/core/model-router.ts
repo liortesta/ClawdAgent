@@ -295,6 +295,37 @@ export function convertMessagesToOpenAI(messages: Array<{ role: string; content:
   return result;
 }
 
+/**
+ * Classify effort level based on task complexity.
+ * Maps to Claude's Effort Level system: low/medium/high.
+ * With Opus 4.6, effort is adaptive — the model adjusts thinking depth automatically.
+ * For Haiku/Sonnet, explicitly setting effort level improves cost/speed.
+ */
+export type EffortLevel = 'low' | 'medium' | 'high' | 'critical';
+
+export function classifyEffort(params: {
+  intent: string;
+  complexity: TaskComplexity;
+  messageLength: number;
+}): EffortLevel {
+  const { intent, complexity, messageLength } = params;
+
+  // Critical: deployments, security audits, autonomous tasks
+  const criticalIntents = ['code_review', 'autonomous_task', 'self_diagnose'];
+  if (criticalIntents.includes(intent) || complexity === 'critical') return 'critical';
+
+  // High: multi-tool tasks, content creation, server operations, complex code
+  const highIntents = ['code_write', 'code_fix', 'build_project', 'content_create', 'orchestrate', 'server_deploy', 'server_fix'];
+  if (highIntents.includes(intent) || complexity === 'complex') return 'high';
+
+  // Low: greetings, simple questions, status checks, help
+  const lowIntents = ['general_chat', 'help', 'settings', 'usage'];
+  if (lowIntents.includes(intent) && messageLength < 100) return 'low';
+
+  // Medium: everything else — search, tasks, single tool use
+  return 'medium';
+}
+
 /** Get all model options (for debugging/display) */
 export function getAllModels(): ModelOption[] { return [...ALL_MODELS]; }
 

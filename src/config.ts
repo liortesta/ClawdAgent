@@ -110,6 +110,25 @@ const configSchema = z.object({
   // OpenClaw bridge
   OPENCLAW_GATEWAY_TOKEN: z.string().optional(),
   OPENCLAW_GATEWAY_PORT: z.coerce.number().default(18789),
+
+  // Crypto Trading
+  TRADING_ENABLED: z.string().default('false').transform(v => v === 'true'),
+  TRADING_PAPER_MODE: z.string().default('true').transform(v => v === 'true'),
+  TRADING_DEFAULT_EXCHANGE: z.string().default('binance'),
+  TRADING_MAX_DAILY_LOSS_USD: z.coerce.number().default(100),
+  TRADING_MAX_POSITION_PERCENT: z.coerce.number().default(5),
+  TRADING_DEFAULT_PAIRS: z.string().default('BTC/USDT,ETH/USDT').transform(v => v.split(',').filter(Boolean)),
+  TRADING_SCAN_INTERVAL_MINUTES: z.coerce.number().default(15),
+  BINANCE_API_KEY: z.string().optional(),
+  BINANCE_API_SECRET: z.string().optional(),
+  OKX_API_KEY: z.string().optional(),
+  OKX_API_SECRET: z.string().optional(),
+  OKX_PASSPHRASE: z.string().optional(),
+
+  // Security
+  ADMIN_IP_WHITELIST: z.string().optional().transform(v => v?.split(',').map(s => s.trim()).filter(Boolean) ?? []),
+  BIND_HOST: z.string().default('127.0.0.1'), // Bind to localhost only by default — prevents Shodan-style discovery
+  REQUIRE_HTTPS: z.string().default('false').transform(v => v === 'true'),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -127,6 +146,27 @@ try {
     process.exit(1);
   }
   throw error;
+}
+
+// ─── Security Warnings ──────────────────────────────────────────────────────
+const INSECURE_DEFAULTS = ['change-this-to-a-real-secret-at-least-32-chars', 'change-this-to-a-real-key-at-least-32-chars'];
+
+if (INSECURE_DEFAULTS.includes(config.JWT_SECRET)) {
+  console.error('⚠️  SECURITY WARNING: JWT_SECRET is using the default value!');
+  console.error('   Set a unique JWT_SECRET in your .env file (at least 32 random characters)');
+  if (config.NODE_ENV === 'production') {
+    console.error('   ❌ Cannot start in production with default JWT_SECRET');
+    process.exit(1);
+  }
+}
+
+if (INSECURE_DEFAULTS.includes(config.ENCRYPTION_KEY)) {
+  console.error('⚠️  SECURITY WARNING: ENCRYPTION_KEY is using the default value!');
+  console.error('   Set a unique ENCRYPTION_KEY in your .env file (at least 32 random characters)');
+  if (config.NODE_ENV === 'production') {
+    console.error('   ❌ Cannot start in production with default ENCRYPTION_KEY');
+    process.exit(1);
+  }
 }
 
 export default Object.freeze(config);

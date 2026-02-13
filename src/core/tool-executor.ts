@@ -21,12 +21,36 @@ import { FirecrawlTool } from '../agents/tools/firecrawl-tool.js';
 import { RapidApiTool } from '../agents/tools/rapidapi-tool.js';
 import { ApifyTool } from '../agents/tools/apify-tool.js';
 import { SSHTool } from '../agents/tools/ssh-tool.js';
+import { TradingTool } from '../agents/tools/trading-tool.js';
+import { RAGTool } from '../agents/tools/rag-tool.js';
+import { WhatsAppTool } from '../agents/tools/whatsapp-tool.js';
 import { BaseTool, ToolResult } from '../agents/tools/base-tool.js';
+import { hasPermission } from '../security/roles.js';
+import { audit } from '../security/audit-log.js';
+import { onToolExecuted, checkCommandSafety, isBridgeReady } from './intelligence-bridge.js';
 import logger from '../utils/logger.js';
+import type { PluginLoader } from './plugin-loader.js';
+
+// Tracking context — set by engine.ts before each message processing cycle
+let currentAgentId = 'system';
+let currentIntent = 'unknown';
+
+/** Set execution context for intelligence tracking */
+export function setExecutionContext(agentId: string, intent: string): void {
+  currentAgentId = agentId;
+  currentIntent = intent;
+}
 
 // Singleton tool instances
 const toolInstances: Map<string, BaseTool> = new Map();
 let initialized = false;
+let pluginLoaderRef: PluginLoader | null = null;
+
+/** Bridge plugin tools into the tool executor */
+export function setPluginLoader(loader: PluginLoader): void {
+  pluginLoaderRef = loader;
+  logger.info('Plugin loader bridged into tool executor');
+}
 
 export function initTools(): void {
   if (initialized) return;
@@ -53,6 +77,9 @@ export function initTools(): void {
   toolInstances.set('rapidapi', new RapidApiTool());
   toolInstances.set('apify', new ApifyTool());
   toolInstances.set('ssh', new SSHTool());
+  toolInstances.set('trading', new TradingTool());
+  toolInstances.set('rag', new RAGTool());
+  toolInstances.set('whatsapp', new WhatsAppTool());
   initialized = true;
   logger.info('Tool executor initialized', { tools: Array.from(toolInstances.keys()) });
 }
@@ -324,7 +351,7 @@ export function getToolDefinitions(allowedTools: string[]): any[] {
   if (allowedTools.includes('email')) {
     definitions.push({
       name: 'email',
-      description: 'Gmail integration. Read, send, reply, search emails. Actions: inbox(maxResults?, unreadOnly?, search?), read(messageId), send(to, subject, body), reply(messageId, body), search(query, maxResults?), mark(messageId, read), unread_count(). Gmail search: "from:john", "subject:invoice", "is:unread", "has:attachment".',
+      description: 'Email — Gmail integration (read, send, reply, search) with SMTP fallback for sending. Actions: inbox(maxResults?, unreadOnly?, search?), read(messageId), send(to, subject, body), reply(messageId, body), search(query, maxResults?), mark(messageId, read), unread_count(). Gmail search: "from:john", "subject:invoice", "is:unread", "has:attachment". If Gmail is not configured, send falls back to SMTP.',
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -578,6 +605,87 @@ export function getToolDefinitions(allowedTools: string[]): any[] {
     });
   }
 
+  if (allowedTools.includes('rag') || allowedTools.includes('knowledge')) {
+    definitions.push({
+      name: 'rag',
+      description: 'Knowledge base (RAG) — ingest documents/URLs, query for relevant context, manage knowledge. Actions: query(question, topK?), ingest_text(text, source?), ingest_url(url), list(), delete(source), stats().',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['query', 'ingest_text', 'ingest_url', 'list', 'delete', 'stats'], description: 'RAG action' },
+          userId: { type: 'string' as const, description: 'User ID' },
+          question: { type: 'string' as const, description: 'Query question (for query)' },
+          text: { type: 'string' as const, description: 'Text content to ingest (for ingest_text)' },
+          source: { type: 'string' as const, description: 'Source name (for ingest_text/delete)' },
+          url: { type: 'string' as const, description: 'URL to ingest (for ingest_url)' },
+          topK: { type: 'number' as const, description: 'Number of results (default 5)' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  if (allowedTools.includes('trading')) {
+    definitions.push({
+      name: 'trading',
+      description: 'Crypto trading — analyze markets, execute trades, manage portfolio, risk management. Paper trading by default. Actions: get_price(symbol), get_prices(symbols), get_candles(symbol, timeframe, limit?), get_orderbook(symbol), get_portfolio(), get_balance(), place_order(symbol, side, type, amount, price?, stopLoss?, takeProfit?, strategy?), close_position(tradeId), get_orders(), analyze(symbol, timeframe?), get_signals(pairs?), scan_market(pairs?), get_strategies(), get_pnl(), get_stats(), get_trades(status?), get_risk(), set_risk(config), list_exchanges(), test_exchange(exchange?).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, description: 'Trading action (see description for full list)' },
+          symbol: { type: 'string' as const, description: 'Trading pair (e.g. BTC/USDT)' },
+          symbols: { type: 'array' as const, items: { type: 'string' as const }, description: 'Multiple trading pairs' },
+          pairs: { type: 'array' as const, items: { type: 'string' as const }, description: 'Trading pairs for scanning' },
+          timeframe: { type: 'string' as const, description: 'Candle timeframe: 1m, 5m, 15m, 1h, 4h, 1d' },
+          limit: { type: 'number' as const, description: 'Number of candles to fetch' },
+          side: { type: 'string' as const, enum: ['buy', 'sell'], description: 'Trade side' },
+          type: { type: 'string' as const, enum: ['market', 'limit'], description: 'Order type' },
+          amount: { type: 'number' as const, description: 'Trade amount' },
+          price: { type: 'number' as const, description: 'Limit price' },
+          stopLoss: { type: 'number' as const, description: 'Stop loss price' },
+          takeProfit: { type: 'number' as const, description: 'Take profit price' },
+          strategy: { type: 'string' as const, description: 'Strategy name' },
+          tradeId: { type: 'string' as const, description: 'Trade ID (for close_position)' },
+          status: { type: 'string' as const, description: 'Trade status filter: open, closed, all' },
+          exchange: { type: 'string' as const, description: 'Exchange name (binance, okx)' },
+          config: { type: 'object' as const, description: 'Risk config object' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  if (allowedTools.includes('whatsapp')) {
+    definitions.push({
+      name: 'whatsapp',
+      description: 'WhatsApp connection management — get QR code to connect, check connection status. Actions: get_qr (returns QR code image as data URL for scanning), get_status (check if WhatsApp is connected/waiting/disconnected).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['get_qr', 'get_status'], description: 'WhatsApp action' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  // Append tools from plugins (if bridged)
+  if (pluginLoaderRef) {
+    for (const pt of pluginLoaderRef.getAllPluginTools()) {
+      definitions.push({
+        name: pt.name,
+        description: pt.description,
+        input_schema: {
+          type: 'object' as const,
+          properties: Object.fromEntries(
+            Object.entries(pt.parameters).map(([k, v]) => [k, { type: v.type, description: v.description }])
+          ),
+          required: Object.entries(pt.parameters).filter(([, v]) => v.required).map(([k]) => k),
+        },
+      });
+    }
+  }
+
   return definitions;
 }
 
@@ -599,6 +707,7 @@ const TOOL_TIMEOUTS: Record<string, number> = {
   'rapidapi': 30000,      // 30s — API calls
   'apify': 300000,        // 5min — actor runs can take time
   'ssh': 300000,          // 5min — scans and workflows can take time
+  'trading': 60000,        // 1min — exchange API calls
 };
 const DEFAULT_TOOL_TIMEOUT = 30000; // 30s default
 
@@ -613,8 +722,51 @@ export async function executeTool(
 
   const tool = toolInstances.get(toolName);
   if (!tool) {
+    // Try plugin loader as fallback before giving up
+    if (pluginLoaderRef) {
+      try {
+        const pluginResult = await pluginLoaderRef.executeTool(toolName, input);
+        if (pluginResult) {
+          logger.info('Tool executed via plugin', { toolName, success: pluginResult.success });
+          return pluginResult;
+        }
+      } catch (err: any) {
+        logger.warn('Plugin tool execution failed', { toolName, error: err.message });
+      }
+    }
     logger.warn('Tool not found', { toolName });
     return { success: false, output: '', error: `Tool "${toolName}" not found` };
+  }
+
+  // Enforce role-based permissions before execution
+  const userRole = (input._userRole as string) ?? 'admin'; // Default admin for system/internal calls
+  const userId = (input._userId as string) ?? 'system';
+  if (!hasPermission(userRole, toolName)) {
+    logger.warn('Tool access denied by role', { toolName, userRole, userId });
+    await audit(userId, 'tool.access_denied', { tool: toolName, role: userRole });
+    return { success: false, output: '', error: `Access denied: role '${userRole}' cannot use tool '${toolName}'` };
+  }
+
+  // ── Safety Gate: check dangerous commands before execution ──
+  if ((toolName === 'bash' || toolName === 'ssh') && isBridgeReady()) {
+    const command = String(input.command ?? '');
+    if (command) {
+      const safetyCheck = checkCommandSafety(command, {
+        agentId: currentAgentId,
+        serverId: String(input.serverId ?? ''),
+      });
+      if (!safetyCheck.approved) {
+        logger.warn('Command blocked by safety gate', {
+          toolName, command: command.slice(0, 100),
+          risk: safetyCheck.riskCategory, score: safetyCheck.riskScore,
+          reason: safetyCheck.reason,
+        });
+        return {
+          success: false, output: '',
+          error: `Command blocked (${safetyCheck.riskCategory}, score ${safetyCheck.riskScore.toFixed(2)}): ${safetyCheck.reason}`,
+        };
+      }
+    }
   }
 
   logger.info('Executing tool', { toolName, input: JSON.stringify(input).slice(0, 300) });
@@ -630,10 +782,40 @@ export async function executeTool(
     ]);
     const duration = Date.now() - start;
     logger.info('Tool executed', { toolName, success: result.success, duration, outputLength: result.output.length });
+
+    // ── Intelligence Hook: feed tool execution data to all subsystems ──
+    if (isBridgeReady()) {
+      onToolExecuted({
+        toolId: toolName,
+        agentId: currentAgentId,
+        success: result.success,
+        latency: duration,
+        cost: 0, // Tool-level cost estimated downstream
+        risk: (toolName === 'bash' || toolName === 'ssh') ? 'medium' : 'low',
+        intent: currentIntent,
+        workflowType: currentIntent,
+      });
+    }
+
     return result;
   } catch (err: any) {
     const duration = Date.now() - start;
     logger.error('Tool execution failed', { toolName, error: err.message, duration });
+
+    // ── Intelligence Hook: record failure ──
+    if (isBridgeReady()) {
+      onToolExecuted({
+        toolId: toolName,
+        agentId: currentAgentId,
+        success: false,
+        latency: duration,
+        cost: 0,
+        risk: 'medium',
+        intent: currentIntent,
+        workflowType: currentIntent,
+      });
+    }
+
     return { success: false, output: '', error: err.message };
   }
 }

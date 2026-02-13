@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ═══════════════════════════════════════════════════════════════════
-# ClawdAgent Installer — Production Setup Wizard
+# ClawdAgent Installer — Production Setup Wizard v6.0
 # ═══════════════════════════════════════════════════════════════════
 
 RED='\033[0;31m'
@@ -14,13 +14,13 @@ NC='\033[0m'
 
 echo -e "${CYAN}"
 echo "  ╔═══════════════════════════════════════════╗"
-echo "  ║    🐙 ClawdAgent — Setup Wizard          ║"
-echo "  ║    Autonomous AI Agent v5.0               ║"
+echo "  ║    ClawdAgent — Setup Wizard v6.0         ║"
+echo "  ║    Autonomous AI Agent + Web Dashboard    ║"
 echo "  ╚═══════════════════════════════════════════╝"
 echo -e "${NC}"
 
 # ── 1. Check prerequisites ──────────────────────────────────────
-echo -e "${BLUE}[1/8] Checking prerequisites...${NC}"
+echo -e "${BLUE}[1/9] Checking prerequisites...${NC}"
 
 check_command() {
   if command -v "$1" &>/dev/null; then
@@ -57,12 +57,21 @@ if [ "$NODE_VER" -lt 18 ]; then
 fi
 echo -e "  ${GREEN}✔${NC} Node.js v$(node -v | cut -d'v' -f2)"
 
-# ── 2. Install dependencies ─────────────────────────────────────
-echo -e "\n${BLUE}[2/8] Installing dependencies...${NC}"
+# ── 2. Install backend dependencies ──────────────────────────────
+echo -e "\n${BLUE}[2/9] Installing backend dependencies...${NC}"
 pnpm install
 
-# ── 3. Setup environment ────────────────────────────────────────
-echo -e "\n${BLUE}[3/8] Setting up environment...${NC}"
+# ── 3. Install web dashboard dependencies ─────────────────────────
+echo -e "\n${BLUE}[3/9] Installing web dashboard dependencies...${NC}"
+if [ -d "web" ]; then
+  cd web && npm install && cd ..
+  echo -e "  ${GREEN}✔${NC} Dashboard dependencies installed"
+else
+  echo -e "  ${YELLOW}→${NC} web/ directory not found, skipping dashboard"
+fi
+
+# ── 4. Setup environment ─────────────────────────────────────────
+echo -e "\n${BLUE}[4/9] Setting up environment...${NC}"
 
 if [ -f .env ]; then
   echo -e "  ${YELLOW}⚠${NC} .env already exists — skipping (backup: .env.backup)"
@@ -72,8 +81,8 @@ else
   echo -e "  ${GREEN}✔${NC} Created .env from template"
 fi
 
-# ── 4. Interactive configuration ─────────────────────────────────
-echo -e "\n${BLUE}[4/8] Configuration${NC}"
+# ── 5. Interactive configuration ──────────────────────────────────
+echo -e "\n${BLUE}[5/9] Configuration${NC}"
 echo -e "${YELLOW}Configure your API keys now? (y/n)${NC}"
 read -r CONFIGURE
 
@@ -132,15 +141,15 @@ if [ "$CONFIGURE" = "y" ] || [ "$CONFIGURE" = "Y" ]; then
   fi
 fi
 
-# ── 5. Create data directories ───────────────────────────────────
-echo -e "\n${BLUE}[5/8] Creating directories...${NC}"
+# ── 6. Create data directories ────────────────────────────────────
+echo -e "\n${BLUE}[6/9] Creating directories...${NC}"
 mkdir -p data/projects data/skills data/whatsapp-session data/rag
 mkdir -p config/agents config/models config/behaviors config/mcp
 mkdir -p plugins logs
 echo -e "  ${GREEN}✔${NC} Directories created"
 
-# ── 6. Generate security keys ────────────────────────────────────
-echo -e "\n${BLUE}[6/8] Generating security keys...${NC}"
+# ── 7. Generate security keys ─────────────────────────────────────
+echo -e "\n${BLUE}[7/9] Generating security keys...${NC}"
 
 generate_key() {
   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -158,14 +167,27 @@ else
   echo -e "  ${YELLOW}→${NC} Security keys already set"
 fi
 
-# ── 7. Build ─────────────────────────────────────────────────────
-echo -e "\n${BLUE}[7/8] Building project...${NC}"
+# ── 8. Build ──────────────────────────────────────────────────────
+echo -e "\n${BLUE}[8/9] Building project...${NC}"
+
+# Build backend
+echo -e "  Building backend..."
 pnpm run build 2>&1 || {
-  echo -e "  ${YELLOW}⚠${NC} Build had warnings (this is normal for first build)"
+  echo -e "  ${YELLOW}⚠${NC} Backend build had warnings (this is normal for first build)"
 }
 
-# ── 8. Docker (optional) ─────────────────────────────────────────
-echo -e "\n${BLUE}[8/8] Docker setup${NC}"
+# Build dashboard
+if [ -d "web" ]; then
+  echo -e "  Building web dashboard..."
+  cd web && npm run build 2>&1 && cd .. || {
+    echo -e "  ${YELLOW}⚠${NC} Dashboard build had warnings"
+    cd ..
+  }
+  echo -e "  ${GREEN}✔${NC} Dashboard built"
+fi
+
+# ── 9. Docker (optional) ──────────────────────────────────────────
+echo -e "\n${BLUE}[9/9] Docker setup${NC}"
 if command -v docker &>/dev/null; then
   echo -e "${YELLOW}Start Docker containers (PostgreSQL + Redis)? (y/n)${NC}"
   read -r USE_DOCKER
@@ -173,6 +195,8 @@ if command -v docker &>/dev/null; then
     if [ -f docker-compose.yml ]; then
       docker compose up -d postgres redis 2>/dev/null || docker-compose up -d postgres redis
       echo -e "  ${GREEN}✔${NC} Docker containers started"
+      echo -e "  Waiting for PostgreSQL to be ready..."
+      sleep 3
     else
       echo -e "  ${YELLOW}⚠${NC} docker-compose.yml not found"
     fi
@@ -181,22 +205,25 @@ else
   echo -e "  ${YELLOW}→${NC} Docker not installed (PostgreSQL and Redis must be running separately)"
 fi
 
-# ── Done ─────────────────────────────────────────────────────────
+# ── Done ──────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  ✅ ClawdAgent setup complete!${NC}"
+echo -e "${GREEN}  ClawdAgent v6.0 setup complete!${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
 echo ""
 echo -e "  ${CYAN}Start development:${NC}  pnpm dev"
 echo -e "  ${CYAN}Start production:${NC}   pnpm start"
+echo -e "  ${CYAN}Web Dashboard:${NC}      http://localhost:5173"
+echo -e "  ${CYAN}API:${NC}                http://localhost:3000"
 echo -e "  ${CYAN}Run tests:${NC}          pnpm test"
 echo -e "  ${CYAN}Build:${NC}              pnpm run build"
+echo ""
+echo -e "  ${YELLOW}Quick start with Docker:${NC}"
+echo -e "    docker compose up -d"
 echo ""
 echo -e "  ${YELLOW}Important:${NC}"
 echo -e "  1. Make sure PostgreSQL is running"
 echo -e "  2. Make sure Redis is running"
 echo -e "  3. Edit .env to add remaining API keys"
-echo -e "  4. Edit config/clawdagent.yaml to customize behavior"
-echo ""
-echo -e "  ${CYAN}Documentation:${NC} https://github.com/clawdagent/clawdagent"
+echo -e "  4. Or manage keys via Dashboard → Settings"
 echo ""

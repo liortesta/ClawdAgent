@@ -9,14 +9,20 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     env_file:
       - .env
+    environment:
+      - DATABASE_URL=postgresql://clawdagent:clawdagent@postgres:5432/clawdagent
+      - REDIS_URL=redis://redis:6379
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./config:/app/config
     networks:
       - clawdnet
 
@@ -33,6 +39,11 @@ services:
     networks:
       - clawdnet
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clawdagent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine

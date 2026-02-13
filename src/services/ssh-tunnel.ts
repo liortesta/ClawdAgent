@@ -92,7 +92,7 @@ export class SSHTunnel {
     const args: string[] = [
       '-N',                                    // No remote command
       '-T',                                    // Disable pseudo-terminal
-      '-o', 'StrictHostKeyChecking=no',
+      '-o', 'StrictHostKeyChecking=accept-new',
       '-o', 'ServerAliveInterval=15',          // Send keepalive every 15s
       '-o', 'ServerAliveCountMax=3',           // Disconnect after 3 missed keepalives
       '-o', 'ExitOnForwardFailure=yes',        // Exit if tunnel binding fails

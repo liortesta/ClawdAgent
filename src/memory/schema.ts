@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, boolean, jsonb, uuid, varchar, index, serial, real } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, integer, boolean, jsonb, uuid, varchar, index, serial, real, doublePrecision } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -125,6 +125,105 @@ export const usageLogs = pgTable('usage_logs', {
   action: text('action').notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// Crypto Trading tables
+// ---------------------------------------------------------------------------
+
+export const exchangeConfigs = pgTable('exchange_configs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  exchange: varchar('exchange', { length: 50 }).notNull(),      // binance, okx
+  encryptedApiKey: text('encrypted_api_key').notNull(),
+  encryptedApiSecret: text('encrypted_api_secret').notNull(),
+  encryptedPassphrase: text('encrypted_passphrase'),             // OKX only
+  isActive: boolean('is_active').default(true).notNull(),
+  label: varchar('label', { length: 100 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_exchange_configs_user').on(table.userId),
+]);
+
+export const trades = pgTable('trades', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  exchange: varchar('exchange', { length: 50 }).notNull(),
+  symbol: varchar('symbol', { length: 30 }).notNull(),           // BTC/USDT
+  side: varchar('side', { length: 10 }).notNull(),               // buy, sell
+  type: varchar('type', { length: 20 }).default('market'),       // market, limit
+  price: doublePrecision('price').notNull(),
+  amount: doublePrecision('amount').notNull(),
+  cost: doublePrecision('cost').notNull(),                       // price * amount
+  fee: doublePrecision('fee').default(0),
+  stopLoss: doublePrecision('stop_loss'),
+  takeProfit: doublePrecision('take_profit'),
+  pnl: doublePrecision('pnl'),                                  // realized P&L
+  pnlPercent: doublePrecision('pnl_percent'),
+  strategy: varchar('strategy', { length: 50 }),                 // scalping, day-trading, swing, dca
+  status: varchar('status', { length: 20 }).default('open').notNull(), // open, closed, cancelled
+  isPaper: boolean('is_paper').default(true).notNull(),
+  closedAt: timestamp('closed_at'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_trades_user').on(table.userId),
+  index('idx_trades_symbol').on(table.symbol),
+  index('idx_trades_status').on(table.status),
+]);
+
+export const portfolios = pgTable('portfolios', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  exchange: varchar('exchange', { length: 50 }).notNull(),
+  asset: varchar('asset', { length: 20 }).notNull(),             // BTC, ETH, USDT
+  amount: doublePrecision('amount').default(0).notNull(),
+  avgEntryPrice: doublePrecision('avg_entry_price'),
+  currentPrice: doublePrecision('current_price'),
+  unrealizedPnl: doublePrecision('unrealized_pnl'),
+  isPaper: boolean('is_paper').default(true).notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_portfolios_user').on(table.userId),
+]);
+
+export const tradingSignals = pgTable('trading_signals', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id),
+  symbol: varchar('symbol', { length: 30 }).notNull(),
+  timeframe: varchar('timeframe', { length: 10 }).notNull(),     // 1m, 5m, 15m, 1h, 4h, 1d
+  direction: varchar('direction', { length: 10 }).notNull(),     // long, short, neutral
+  confidence: doublePrecision('confidence').notNull(),            // 0-100
+  strategy: varchar('strategy', { length: 50 }).notNull(),
+  entryPrice: doublePrecision('entry_price'),
+  stopLoss: doublePrecision('stop_loss'),
+  takeProfit: doublePrecision('take_profit'),
+  indicators: jsonb('indicators').default({}),                   // RSI, MACD values etc
+  outcome: varchar('outcome', { length: 20 }),                   // win, loss, expired, null
+  isActive: boolean('is_active').default(true).notNull(),
+  expiresAt: timestamp('expires_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_signals_symbol').on(table.symbol),
+  index('idx_signals_active').on(table.isActive),
+]);
+
+export const tradingRiskConfig = pgTable('trading_risk_config', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  paperMode: boolean('paper_mode').default(true).notNull(),
+  maxPositionPercent: doublePrecision('max_position_percent').default(5),
+  maxOpenPositions: integer('max_open_positions').default(3),
+  maxDailyLossPercent: doublePrecision('max_daily_loss_percent').default(3),
+  maxDailyLossUsd: doublePrecision('max_daily_loss_usd').default(100),
+  defaultSlPercent: doublePrecision('default_sl_percent').default(2),
+  defaultTpPercent: doublePrecision('default_tp_percent').default(4),
+  cooldownMinutes: integer('cooldown_minutes').default(5),
+  maxLeverage: doublePrecision('max_leverage').default(2),
+  allowedPairs: jsonb('allowed_pairs').default([]),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => [
+  index('idx_risk_config_user').on(table.userId),
+]);
 
 export const auditLog = pgTable('audit_log', {
   id: uuid('id').primaryKey().defaultRandom(),

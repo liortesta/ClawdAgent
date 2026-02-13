@@ -31,20 +31,30 @@ export class AgentQueueManager {
   private connection: IORedis;
   private handler: AgentHandler | null = null;
   private initialized = false;
+  private redisAvailable = false;
 
   constructor() {
     this.connection = new IORedis(config.REDIS_URL, {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
       lazyConnect: true,
+      retryStrategy: (times: number) => {
+        if (times > 3) return null; // Stop retrying after 3 attempts
+        return Math.min(times * 500, 3000);
+      },
     });
+    // Suppress unhandled ioredis error events
+    this.connection.on('error', () => { /* handled — Redis unavailable */ });
   }
 
   async init(agentIds: string[]): Promise<void> {
     try {
       await this.connection.connect();
+      this.redisAvailable = true;
     } catch {
-      // May already be connected
+      logger.warn('Redis unavailable — agent queues disabled (in-memory processing only)');
+      this.initialized = true;
+      return;
     }
 
     for (const agentId of agentIds) {
@@ -130,6 +140,14 @@ export class AgentQueueManager {
 
   /** Enqueue a job for a specific agent */
   async enqueue(job: AgentJob): Promise<string> {
+    if (!this.redisAvailable) {
+      // Fallback: process directly if handler is available
+      if (this.handler) {
+        await this.handler(job);
+      }
+      return 'direct-' + Date.now();
+    }
+
     let queue = this.queues.get(job.agentId);
     if (!queue) {
       queue = this.createQueueForAgent(job.agentId);

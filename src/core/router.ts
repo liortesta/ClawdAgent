@@ -48,6 +48,10 @@ export enum Intent {
   SERVER_MANAGE = 'server_manage',
   SERVER_HEALTH = 'server_health',
   SERVER_SCAN = 'server_scan',
+  CRYPTO_TRADE = 'crypto_trade',
+  CRYPTO_ANALYZE = 'crypto_analyze',
+  CRYPTO_PORTFOLIO = 'crypto_portfolio',
+  WHATSAPP_CONNECT = 'whatsapp_connect',
 }
 
 export interface RoutingResult {
@@ -104,7 +108,11 @@ Available intents:
 - site_analyze: Analyze a website, build a clone, compare sites, tech stack analysis — תנתח אתר, נתח אתר, analyze site, analyze website, site analysis, תבנה אתר דומה, clone site, מה הטכנולוגיה של, tech stack
 - server_manage: Manage SSH servers — add, remove, connect, list servers, switch between servers, execute on specific server, upload/download files — תתחבר לשרת, חבר שרת, שרתים, servers, תוסיף שרת, add server, switch server, תעלה קובץ לשרת, /servers
 - server_health: Check server health, monitor servers, CPU/RAM/disk usage — בריאות שרת, health check, server health, מצב השרתים, how are my servers, תבדוק את כל השרתים, /health
+- crypto_trade: Buy/sell crypto, place orders, manage positions, DCA — קנה ביטקוין, מכור ETH, buy BTC, sell crypto, trade, סחר, מסחר
+- crypto_analyze: Technical analysis, signals, market scanning — נתח BTC, analyze crypto, TA, RSI, MACD, סרוק שוק, scan market, ניתוח טכני
+- crypto_portfolio: Check crypto portfolio, P&L, holdings, stats — תיק קריפטו, portfolio, P&L, רווח, הפסד, אחזקות, holdings
 - server_scan: Scan/discover what's on a server — capabilities, tools, projects, databases — תסרוק שרת, scan server, מה יש בשרת, what's on the server, discover, תגלה מה רץ, /server scan
+- whatsapp_connect: Connect WhatsApp, get QR code, check WhatsApp status — חבר ווטסאפ, התחבר לוואטסאפ, QR, קוד QR, whatsapp connect, whatsapp status, link whatsapp
 
 Hebrew examples:
 - "מה מצב השרת" → server_status
@@ -148,15 +156,30 @@ Hebrew examples:
 - "מה הבריאות של השרתים" → server_health
 - "תסרוק את השרת" → server_scan
 - "מה יש על השרת" → server_scan
+- "קנה ביטקוין" → crypto_trade
+- "מכור ETH" → crypto_trade
+- "נתח BTC" → crypto_analyze
+- "מה המצב של הקריפטו" → crypto_portfolio
+- "תיק ההשקעות שלי" → crypto_portfolio
+- "סרוק את השוק" → crypto_analyze
+- "DCA ביטקוין" → crypto_trade
+- "אני רוצה להתחבר לוואטסאפ" → whatsapp_connect
+- "חבר ווטסאפ" → whatsapp_connect
+- "תראה QR" → whatsapp_connect
+- "connect whatsapp" → whatsapp_connect
 
 Respond ONLY with valid JSON (no markdown, no text before/after):
 {"intent":"<intent_name>","confidence":<0.0-1.0>,"agent":"<best_agent>","params":{"key":"value"}}
 
-Agent options: server-manager, code-assistant, researcher, task-planner, general, desktop-controller, project-builder, web-agent, content-creator, orchestrator, device-controller
+Agent options: server-manager, code-assistant, researcher, task-planner, general, desktop-controller, project-builder, web-agent, content-creator, orchestrator, device-controller, crypto-trader, crypto-analyst
 
 For ugc_create and podcast_create → use content-creator agent.
 For site_analyze → use orchestrator agent.
-For server_manage, server_health, server_scan → use server-manager agent.`;
+For server_manage, server_health, server_scan → use server-manager agent.
+For crypto_trade → use crypto-trader agent.
+For crypto_analyze → use crypto-analyst agent.
+For crypto_portfolio → use crypto-trader agent.
+For whatsapp_connect → use general agent.`;
 
 export class IntentRouter {
   private ai: AIClient;
@@ -212,6 +235,21 @@ export class IntentRouter {
    */
   private keywordClassify(message: string): RoutingResult | null {
     const m = message.toLowerCase();
+
+    // Crypto trading — buy/sell/trade
+    if (/\b(buy|sell|trade|long|short)\b.*\b(btc|eth|sol|bnb|xrp|crypto|usdt)\b|קנה.*\b(btc|eth|ביטקוין|אתריום|קריפטו)\b|מכור.*\b(btc|eth|ביטקוין|אתריום|קריפטו)\b|סחר.*קריפטו|מסחר.*קריפטו|DCA|dca|סקאלפ|scalp/i.test(message)) {
+      return { intent: Intent.CRYPTO_TRADE, confidence: 0.9, agentId: 'crypto-trader', extractedParams: {} };
+    }
+
+    // Crypto analysis — TA, signals, scan
+    if (/\b(analyze|analysis|TA)\b.*\b(btc|eth|sol|crypto)\b|נתח.*\b(btc|eth|ביטקוין|אתריום|קריפטו)\b|ניתוח.*טכני|ניתוח.*קריפטו|scan.*market|סרוק.*שוק|RSI|MACD|bollinger|signals.*crypto|אותות.*מסחר/i.test(message)) {
+      return { intent: Intent.CRYPTO_ANALYZE, confidence: 0.9, agentId: 'crypto-analyst', extractedParams: {} };
+    }
+
+    // Crypto portfolio
+    if (/crypto.*portfolio|תיק.*קריפטו|תיק.*השקעות|אחזקות.*קריפטו|crypto.*P&?L|רווח.*קריפטו|הפסד.*קריפטו|trading.*stats|סטטיסטיקות.*מסחר/i.test(message)) {
+      return { intent: Intent.CRYPTO_PORTFOLIO, confidence: 0.9, agentId: 'crypto-trader', extractedParams: {} };
+    }
 
     // UGC Factory — product showcase, AI influencer, brand content
     if (/UGC|ugc|תוכן.*מוצר|product.*video|brand.*content|AI.*influencer|מוצר.*וידאו|שיווק.*מוצר|product.*showcase/i.test(message)) {
@@ -311,6 +349,11 @@ export class IntentRouter {
     // Email
     if (/מייל|email|שלח.*מייל|inbox|send.*email/i.test(message)) {
       return { intent: Intent.EMAIL, confidence: 0.8, agentId: 'general', extractedParams: {} };
+    }
+
+    // WhatsApp connect
+    if (/whatsapp.*connect|connect.*whatsapp|whatsapp.*qr|whatsapp.*status|חבר.*ווטסאפ|התחבר.*וואטסאפ|התחבר.*ווטסאפ|להתחבר.*וואטסאפ|להתחבר.*ווטסאפ|קוד.*QR|QR.*code|תראה.*QR|חבר.*וואטסאפ|link.*whatsapp/i.test(message)) {
+      return { intent: Intent.WHATSAPP_CONNECT, confidence: 0.9, agentId: 'general', extractedParams: {} };
     }
 
     // Web action

@@ -1,4 +1,5 @@
 import { AIClient, Message } from './ai-client.js';
+import { pushActivity } from '../interfaces/web/routes/dashboard.js';
 import { IntentRouter } from './router.js';
 import { buildSystemPromptWithContext, FullContext, trimHistoryToFit } from './context-builder.js';
 import { SkillsEngine } from './skills-engine.js';
@@ -16,11 +17,20 @@ import type { CronTask } from './cron-engine.js';
 import { scheduleReminder } from '../queue/scheduler.js';
 import { UsageTracker } from './usage-tracker.js';
 import { RAGEngine } from '../actions/rag/rag-engine.js';
-import { initTools, getToolDefinitions, executeTool } from './tool-executor.js';
+import { initTools, getToolDefinitions, executeTool, setExecutionContext } from './tool-executor.js';
 import { classifyComplexity, selectModel } from './model-router.js';
+import { onMessageProcessed, onError, getIntelligenceContext, isBridgeReady } from './intelligence-bridge.js';
+import type { EvolutionEngine } from './evolution-engine.js';
 import config from '../config.js';
 import { extractJSON } from '../utils/helpers.js';
 import logger from '../utils/logger.js';
+
+export interface ProgressEvent {
+  type: 'status' | 'agent' | 'tool' | 'thinking' | 'error';
+  message: string;
+  agent?: string;
+  tool?: string;
+}
 
 export interface IncomingMessage {
   platform: 'telegram' | 'discord' | 'whatsapp' | 'web';
@@ -28,13 +38,16 @@ export interface IncomingMessage {
   userName: string;
   chatId: string;
   text: string;
+  userRole?: string;
   replyTo?: string;
   attachments?: Array<{ type: string; url: string }>;
   metadata?: Record<string, unknown>;
+  onProgress?: (event: ProgressEvent) => void;
 }
 
 export interface OutgoingMessage {
   text: string;
+  thinking?: string;
   format?: 'text' | 'markdown' | 'html';
   attachments?: Array<{ type: string; data: Buffer; name: string }>;
   agentUsed?: string;
@@ -57,6 +70,7 @@ export class Engine {
   private cronEngine: CronEngine | null = null;
   private usageTracker: UsageTracker | null = null;
   private ragEngine: RAGEngine | null = null;
+  private evolution: EvolutionEngine | null = null;
 
   private getHistory?: (userId: string, platform: string, limit: number) => Promise<Message[]>;
   private saveMessage?: (userId: string, platform: string, role: string, content: string, metadata?: any) => Promise<void>;
@@ -101,6 +115,8 @@ export class Engine {
   getCronEngine(): CronEngine | null { return this.cronEngine; }
   getUsageTracker(): UsageTracker | null { return this.usageTracker; }
   getRAGEngine(): RAGEngine | null { return this.ragEngine; }
+  setEvolutionEngine(evo: EvolutionEngine) { this.evolution = evo; }
+  getEvolutionEngine(): EvolutionEngine | null { return this.evolution; }
 
   setMemoryFunctions(fns: {
     getHistory: typeof this.getHistory;
@@ -123,6 +139,7 @@ export class Engine {
   async process(incoming: IncomingMessage): Promise<OutgoingMessage> {
     const startTime = Date.now();
     logger.info('Processing message', { platform: incoming.platform, userId: incoming.userId, textLength: incoming.text.length });
+    pushActivity('message', `${incoming.userName}: ${incoming.text.slice(0, 80)}${incoming.text.length > 80 ? '...' : ''}`, { platform: incoming.platform });
 
     try {
       // 1. Load conversation history (filter out empty messages that would cause API errors)
@@ -137,6 +154,7 @@ export class Engine {
       const contextSummary = history.slice(-6).map(m => `${m.role}: ${m.content.slice(0, 200)}`).join('\n');
       const routing = await this.router.classify(incoming.text, contextSummary);
       logger.info('Intent classified', { intent: routing.intent, confidence: routing.confidence, agent: routing.agentId });
+      incoming.onProgress?.({ type: 'status', message: `Routing to ${routing.agentId}...` });
 
       // 2a. Desktop control — intercept before normal AI flow
       if (
@@ -428,8 +446,12 @@ If they want to check a running project, use "status" with projectName.`,
         Intent.GENERAL_CHAT, Intent.HELP, Intent.SETTINGS, Intent.USAGE,
         Intent.TASK_LIST, Intent.REMINDER_SET, Intent.CALENDAR,
       ]);
+      let metaThinking = '';
       if (!SIMPLE_INTENTS.has(routing.intent)) {
+        incoming.onProgress?.({ type: 'thinking', message: 'Analyzing request...' });
         const thought = await this.meta.think(incoming.text, contextSummary);
+        metaThinking = thought.situation ?? '';
+        if (thought.plan?.length) metaThinking += '\n' + thought.plan.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n');
         logger.info('Meta-agent thought', { situation: thought.situation, confidence: thought.confidence, planSteps: thought.plan?.length ?? 0 });
       } else {
         logger.info('Skipping meta-agent for simple intent', { intent: routing.intent });
@@ -437,6 +459,7 @@ If they want to check a running project, use "status" with projectName.`,
 
       // 3. Select agent
       const agent = getAgent(routing.agentId) ?? getAgent('general')!;
+      incoming.onProgress?.({ type: 'agent', message: `Using ${agent.name}...`, agent: agent.id });
 
       // 4. Match skills
       const matchedSkill = this.skills.matchSkill(incoming.text);
@@ -452,6 +475,22 @@ If they want to check a running project, use "status" with projectName.`,
         this.getKnowledgeCount ? this.getKnowledgeCount(incoming.userId) : 0,
       ]);
 
+      // ── Intelligence: enrich context with live intelligence data ──
+      let evolutionContext: FullContext['evolution'] | undefined;
+      if (isBridgeReady() && this.evolution) {
+        const intel = getIntelligenceContext();
+        evolutionContext = {
+          phase: 'active',
+          totalSkills: this.skills.getSkillCount(),
+          healthIndex: intel.healthIndex,
+          governanceBudget: intel.governanceBudget,
+          activeGoals: intel.activeGoals,
+          pendingSelfTasks: intel.pendingSelfTasks,
+          disabledAgents: intel.disabledAgents,
+          costToday: intel.costToday,
+        };
+      }
+
       const fullContext: FullContext = {
         history,
         knowledge: knowledgeStr,
@@ -462,6 +501,7 @@ If they want to check a running project, use "status" with projectName.`,
         providers: this.ai.getAvailableProviders(),
         knowledgeCount,
         goals: this.goals.getGoalsSummary(incoming.userId),
+        ...(evolutionContext ? { evolution: evolutionContext } : {}),
       };
 
       // 6. Build system prompt with full context
@@ -506,17 +546,11 @@ If they want to check a running project, use "status" with projectName.`,
       const needsTools = toolDefs.length > 0;
 
       if (resolvedMode === 'max' && claudeCodeActive) {
-        // MAX mode: Claude Code CLI primary (FREE)
-        if (!needsTools) {
-          selectedProvider = 'claude-code';
-          selectedModelId = undefined;
-          logger.info('Model selected', { provider: 'claude-code', mode: 'max', reason: 'FREE — no tools needed' });
-        } else {
-          // Tools required → Anthropic API (CLI doesn't support tool_use blocks)
-          selectedProvider = 'anthropic';
-          selectedModelId = config.AI_MODEL;
-          logger.info('Model selected', { provider: 'anthropic', mode: 'max', reason: 'tool_use required', tools: agentTools.length });
-        }
+        // MAX mode: Claude Code CLI for ALL requests (FREE — Max subscription)
+        // Tools are embedded in the prompt and tool_call tags are parsed from response
+        selectedProvider = 'claude-code';
+        selectedModelId = undefined;
+        logger.info('Model selected', { provider: 'claude-code', mode: 'max', reason: 'FREE — Max subscription', tools: needsTools ? agentTools.length : 0 });
       } else if (resolvedMode === 'pro') {
         // PRO mode: Anthropic API primary
         selectedProvider = 'anthropic';
@@ -555,8 +589,8 @@ If they want to check a running project, use "status" with projectName.`,
           });
         }
       } else {
-        // Fallback: max with CLI if available, else pro
-        if (claudeCodeActive && !needsTools) {
+        // Fallback: CLI if available, else API
+        if (claudeCodeActive) {
           selectedProvider = 'claude-code';
           selectedModelId = undefined;
         } else {
@@ -566,6 +600,10 @@ If they want to check a running project, use "status" with projectName.`,
         logger.info('Model selected', { provider: selectedProvider, mode: resolvedMode, reason: 'fallback' });
       }
 
+      // ── Intelligence: set execution context so tool-executor tracks agent/intent ──
+      setExecutionContext(agent.id, routing.intent);
+
+      incoming.onProgress?.({ type: 'status', message: 'Generating response...' });
       let response;
       if (toolDefs.length > 0) {
         // Agent HAS tools → use chatWithTools (tool execution loop)
@@ -582,9 +620,13 @@ If they want to check a running project, use "status" with projectName.`,
             ...(agent.maxToolIterations ? { maxToolIterations: agent.maxToolIterations } : {}),
           },
           async (toolName, toolInput) => {
+            incoming.onProgress?.({ type: 'tool', message: `Running ${toolName}...`, tool: toolName });
             if ((toolName === 'task' || toolName === 'db') && !toolInput.userId) {
               toolInput.userId = incoming.userId;
             }
+            // Inject user role for permission checks
+            toolInput._userRole = incoming.userRole ?? 'admin';
+            toolInput._userId = incoming.userId;
             return executeTool(toolName, toolInput);
           },
         );
@@ -651,13 +693,40 @@ If they want to check a running project, use "status" with projectName.`,
       );
 
       const duration = Date.now() - startTime;
+
+      // ── Intelligence: feed message result into all subsystems ──
+      if (isBridgeReady()) {
+        onMessageProcessed({
+          agentId: agent.id,
+          intent: routing.intent,
+          success: true,
+          latency: duration,
+          cost: 0, // Actual cost tracked by usageTracker
+          modelId: response.modelUsed ?? selectedModelId,
+          provider: response.provider ?? selectedProvider,
+          toolsUsed: (response as any).toolsUsed ?? [],
+          inputTokens: response.usage?.inputTokens,
+          outputTokens: response.usage?.outputTokens,
+          userMessage: incoming.text,
+          response: response.content,
+        });
+      }
       logger.info('Message processed', {
         agent: agent.id, provider: response.provider, skill: matchedSkill?.id,
         duration, tokens: response.usage,
       });
 
+      // Collect thinking from meta-agent + AI response
+      const thinkingParts: string[] = [];
+      if (metaThinking) thinkingParts.push(metaThinking);
+      if (response.thinking) thinkingParts.push(response.thinking);
+      const thinking = thinkingParts.length > 0 ? thinkingParts.join('\n\n') : undefined;
+
+      pushActivity('response', `[${agent.id}] ${response.content.slice(0, 80)}${response.content.length > 80 ? '...' : ''}`, { agent: agent.id, platform: incoming.platform });
+
       return {
         text: response.content,
+        thinking,
         format: 'markdown',
         agentUsed: agent.id,
         tokensUsed: response.usage ? { input: response.usage.inputTokens, output: response.usage.outputTokens } : undefined,
@@ -667,6 +736,19 @@ If they want to check a running project, use "status" with projectName.`,
 
     } catch (error: any) {
       logger.error('Engine processing error', { error: error.message, stack: error.stack });
+      pushActivity('error', `Error: ${error.message?.slice(0, 100)}`, { platform: incoming.platform });
+
+      // Self-heal attempt (non-blocking)
+      if (this.evolution) {
+        this.evolution.selfHeal(error, `Processing message: ${incoming.text.slice(0, 200)}`).catch(() => {});
+      }
+
+      // ── Intelligence: record error into memory + observability ──
+      if (isBridgeReady()) {
+        onError('engine_processing', error.message ?? 'Unknown engine error', {
+          agentId: 'engine',
+        });
+      }
 
       // Specific Hebrew error messages per error type
       let errorMsg: string;

@@ -31,6 +31,7 @@ import { createWebhookTunnel, SSHTunnel } from './services/ssh-tunnel.js';
 import { setCronToolEngine } from './agents/tools/cron-tool.js';
 import { setWorkflowToolDeps } from './agents/tools/workflow-tool.js';
 import { setAnalyticsToolDeps } from './agents/tools/analytics-tool.js';
+import { setRAGEngineRef } from './agents/tools/rag-tool.js';
 // Round 11 imports
 import { setClaudeCodeToolProvider } from './agents/tools/claude-code-tool.js';
 import { setClaudeCodeSavingsGetter } from './agents/tools/analytics-tool.js';
@@ -42,6 +43,14 @@ import { Updater } from './core/updater.js';
 import { OpenClawSync } from './core/openclaw-sync.js';
 import { PluginLoader } from './core/plugin-loader.js';
 import { initKeyRotation, stopKeyRotation } from './security/key-rotation.js';
+// Self-Evolution imports
+import { SkillFetcher } from './core/skill-fetcher.js';
+import { AgentFactory } from './core/agent-factory.js';
+import { CapabilityLearner } from './core/capability-learner.js';
+import { CrewOrchestrator } from './core/crew-orchestrator.js';
+import { EvolutionEngine } from './core/evolution-engine.js';
+import { setPluginLoader } from './core/tool-executor.js';
+import { initBridge, runPeriodicIntelligence, isBridgeReady } from './core/intelligence-bridge.js';
 import type { Message } from './core/ai-client.js';
 import type { BaseInterface } from './interfaces/base.js';
 
@@ -256,6 +265,44 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
     },
   });
 
+  // 4a. Self-Evolution Engine
+  setPluginLoader(pluginLoader);
+  const skillFetcher = new SkillFetcher(engine.getAIClient(), engine.getSkillsEngine());
+  const agentFactory = new AgentFactory(engine.getAIClient(), engine.getSkillsEngine());
+  const capabilityLearner = new CapabilityLearner(engine.getAIClient(), engine.getSkillsEngine(), agentFactory);
+  const crewOrchestrator = new CrewOrchestrator(engine.getAIClient());
+  const evolutionEngine = new EvolutionEngine({
+    ai: engine.getAIClient(),
+    skillFetcher,
+    agentFactory,
+    capabilityLearner,
+    crewOrchestrator,
+    metaAgent: engine.getMetaAgent(),
+    selfRepair,
+    skills: engine.getSkillsEngine(),
+  });
+  engine.setEvolutionEngine(evolutionEngine);
+
+  // ── Intelligence Bridge: connect all 9 subsystems to the live pipeline ──
+  initBridge(evolutionEngine);
+
+  logger.info('🧬 Evolution Engine initialized', {
+    skillFetcher: true,
+    agentFactory: true,
+    capabilityLearner: true,
+    crewOrchestrator: true,
+    pluginsBridged: pluginLoader.getLoadedCount(),
+    intelligenceScorer: true,
+    memoryHierarchy: true,
+    governanceEngine: true,
+    costIntelligence: true,
+    adaptiveModelRouter: true,
+    observability: true,
+    autonomousGoals: true,
+    safetySimulator: true,
+    feedbackLoop: true,
+  });
+
   // Wire subsystems into heartbeat
   heartbeat.setSubsystems({
     meta: engine.getMetaAgent(),
@@ -355,6 +402,9 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
   engine.setCronEngine(cronEngine);
   engine.setUsageTracker(usageTracker);
   engine.setRAGEngine(ragEngine);
+
+  // Wire RAG engine into the RAG tool so agents can use it
+  setRAGEngineRef(ragEngine);
 
   // Now create ProactiveThinker (needs cronEngine)
   const proactiveThinker = new ProactiveThinker({
@@ -535,6 +585,67 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
     heartbeat.start(config.HEARTBEAT_INTERVAL_MS);
   }
 
+  // ── Intelligence: periodic intelligence cycle every 5 minutes ──
+  const INTEL_INTERVAL_MS = 5 * 60 * 1000;
+  setInterval(async () => {
+    if (!isBridgeReady()) return;
+    try {
+      const { getAllAgents } = await import('./agents/registry.js');
+      const agents = getAllAgents();
+      const health = evolutionEngine.getHealthIndex();
+      const result = runPeriodicIntelligence({
+        activeAgents: agents.length,
+        dynamicAgents: agentFactory.getDynamicAgentCount(),
+        totalSkills: engine.getSkillsEngine().getSkillCount(),
+        evolutionPhase: 'active',
+        costToday: usageTracker.getTodaySummary().totalCost,
+        successRate: health.score,
+        avgLatency: 0,
+        errorRate: health.details.failureRate ?? 0,
+      });
+      // Take observability snapshot each cycle
+      evolutionEngine.takeSnapshot();
+      if (result.triggersTriggered > 0 || result.tasksGenerated > 0) {
+        logger.info('Intelligence cycle completed', result);
+      }
+    } catch (err: any) {
+      logger.debug('Periodic intelligence error', { error: err.message });
+    }
+  }, INTEL_INTERVAL_MS);
+
+  // ── Evolution: periodic self-improvement cycle every 6 hours ──
+  const EVOLUTION_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  let lastEvolutionAt = 0;
+  setInterval(async () => {
+    if (Date.now() - lastEvolutionAt < EVOLUTION_INTERVAL_MS) return;
+    try {
+      logger.info('🧬 Periodic evolution cycle starting...');
+      const result = await evolutionEngine.evolve(false);
+      lastEvolutionAt = Date.now();
+      logger.info('🧬 Periodic evolution cycle completed', {
+        skillsFetched: result.skillsFetched,
+        agentsCreated: result.agentsCreated,
+        errors: result.errors.length,
+        duration: result.duration,
+      });
+    } catch (err: any) {
+      logger.debug('Periodic evolution error', { error: err.message });
+    }
+  }, EVOLUTION_INTERVAL_MS);
+  // Also run a light evolution 30 seconds after startup
+  setTimeout(async () => {
+    try {
+      const result = await evolutionEngine.evolve(false);
+      lastEvolutionAt = Date.now();
+      logger.info('🧬 Startup evolution completed', {
+        agentsCreated: result.agentsCreated,
+        errors: result.errors.length,
+      });
+    } catch (err: any) {
+      logger.debug('Startup evolution error', { error: err.message });
+    }
+  }, 30_000);
+
   logger.info(`✅ ClawdAgent PRODUCTION v${yamlConfig.agent.version} started with ${interfaces.length} interface(s)`, {
     providers: engine.getAIClient().getAvailableProviders(),
     skills: engine.getSkillsEngine().getSkillCount(),
@@ -560,7 +671,10 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
     openclawSync: openclawSync.isRunning(),
     updater: updater.getCurrentVersion(),
     claudeCode: ccAdapter?.available ? 'active (FREE)' : 'unavailable',
-    tools: 17,
+    evolution: true,
+    intelligenceBridge: isBridgeReady(),
+    dynamicAgents: agentFactory.getDynamicAgentCount(),
+    tools: 19,
   });
 
   // Graceful shutdown

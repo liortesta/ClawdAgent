@@ -117,13 +117,43 @@ function getEventLabel(type: string): string {
   }
 }
 
+// ─── Webhook Authentication ─────────────────────────────────────────────────
+
+function verifyWebhookAuth(req: Request): boolean {
+  // Method 1: Bearer token matching OPENCLAW_GATEWAY_TOKEN
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    return !!config.OPENCLAW_GATEWAY_TOKEN && token === config.OPENCLAW_GATEWAY_TOKEN;
+  }
+
+  // Method 2: X-Webhook-Secret header
+  const webhookSecret = req.headers['x-webhook-secret'] as string;
+  if (webhookSecret) {
+    return !!config.OPENCLAW_GATEWAY_TOKEN && webhookSecret === config.OPENCLAW_GATEWAY_TOKEN;
+  }
+
+  // No auth provided
+  return false;
+}
+
 // ─── Webhook Routes ──────────────────────────────────────────────────────────
 
 export function setupWebhookRoutes(): Router {
   const router = Router();
 
-  // POST /webhook/openclaw — Receive events from OpenClaw
+  // POST /webhook/openclaw — Receive events from OpenClaw (requires auth)
   router.post('/openclaw', async (req: Request, res: Response) => {
+    // Verify webhook authentication
+    if (!verifyWebhookAuth(req)) {
+      logger.warn('Unauthorized webhook attempt', {
+        ip: req.ip ?? req.socket.remoteAddress,
+        userAgent: req.headers['user-agent'],
+      });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
     try {
       const event = req.body as OpenClawEvent;
 

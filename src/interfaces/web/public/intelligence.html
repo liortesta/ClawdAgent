@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ClawdAgent Intelligence Command Center</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap');
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-card: rgba(15,20,40,0.85);
+      --bg-glass: rgba(20,30,60,0.5);
+      --border: rgba(100,120,200,0.15);
+      --accent: #6366f1;
+      --accent-glow: rgba(99,102,241,0.3);
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --cyan: #06b6d4;
+      --pink: #ec4899;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-primary);
+      color: #e2e8f0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Animated background grid */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background:
+        linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      animation: gridShift 20s linear infinite;
+    }
+    @keyframes gridShift { to { background-position: 60px 60px; } }
+
+    /* Glass card */
+    .glass {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    .glass:hover {
+      border-color: rgba(99,102,241,0.3);
+      box-shadow: 0 0 30px rgba(99,102,241,0.08);
+    }
+
+    /* Health ring */
+    .health-ring { position: relative; width: 180px; height: 180px; }
+    .health-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .health-ring .track { fill: none; stroke: rgba(100,120,200,0.1); stroke-width: 10; }
+    .health-ring .progress { fill: none; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 1s ease, stroke 0.5s; }
+    .health-ring .value {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      font-size: 2.5rem; font-weight: 700; line-height: 1;
+    }
+    .health-ring .label {
+      position: absolute; top: 65%; left: 50%; transform: translate(-50%, 0);
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: #94a3b8;
+    }
+
+    /* Metric card */
+    .metric-card {
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .metric-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .metric-card:hover::before { opacity: 1; }
+    .metric-value { font-size: 1.75rem; font-weight: 700; line-height: 1.2; }
+    .metric-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: #94a3b8; margin-top: 2px; }
+
+    /* Subsystem node */
+    .subsystem-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 500;
+      border: 1px solid var(--border);
+    }
+    .subsystem-badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+    /* Table */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .data-table th { text-align: left; padding: 8px 12px; color: #94a3b8; font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid var(--border); }
+    .data-table td { padding: 10px 12px; border-bottom: 1px solid rgba(100,120,200,0.06); }
+    .data-table tr:hover td { background: rgba(99,102,241,0.04); }
+
+    /* Progress bar */
+    .prog-bar { height: 6px; border-radius: 3px; background: rgba(100,120,200,0.1); overflow: hidden; }
+    .prog-fill { height: 100%; border-radius: 3px; transition: width 1s ease; }
+
+    /* Sparkline */
+    .sparkline { display: inline-block; vertical-align: middle; }
+    .sparkline polyline { fill: none; stroke-width: 1.5; }
+
+    /* Force graph */
+    #force-graph { width: 100%; height: 400px; position: relative; border-radius: 12px; overflow: hidden; background: rgba(5,10,25,0.6); }
+    #force-graph svg { width: 100%; height: 100%; }
+
+    /* Pulse animation */
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .pulse { animation: pulse 2s ease infinite; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 3px; }
+
+    /* Anomaly badge */
+    .anomaly-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; }
+    .anomaly-low { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .anomaly-medium { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .anomaly-high { background: rgba(239,68,68,0.15); color: #ef4444; }
+
+    /* Status dot */
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .status-online { background: var(--success); box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+    .status-degraded { background: var(--warning); box-shadow: 0 0 8px rgba(245,158,11,0.5); }
+    .status-offline { background: var(--danger); box-shadow: 0 0 8px rgba(239,68,68,0.5); }
+
+    /* Tab system */
+    .tab-btn { padding: 8px 20px; border-radius: 8px; font-size: 0.8rem; font-weight: 500; cursor: pointer; border: 1px solid transparent; background: transparent; color: #94a3b8; transition: all 0.2s; }
+    .tab-btn:hover { color: #e2e8f0; background: rgba(99,102,241,0.1); }
+    .tab-btn.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+  </style>
+</head>
+<body>
+  <div style="position:relative;z-index:1;">
+
+    <!-- ==================== HEADER ==================== -->
+    <header style="padding:20px 32px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:700;">C</div>
+        <div>
+          <h1 style="font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;">Intelligence Command Center</h1>
+          <p style="font-size:0.7rem;color:#94a3b8;">ClawdAgent — 9 Subsystems Live</p>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <span id="bridge-status" class="subsystem-badge">
+          <span class="dot status-offline"></span>
+          <span>Connecting...</span>
+        </span>
+        <span class="mono" style="font-size:0.75rem;color:#64748b;" id="last-update">--:--:--</span>
+        <button onclick="refresh()" style="padding:8px 16px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:0.8rem;font-weight:500;cursor:pointer;">Refresh</button>
+      </div>
+    </header>
+
+    <!-- ==================== TOP METRICS ROW ==================== -->
+    <section style="padding:24px 32px 0;display:grid;grid-template-columns:200px 1fr;gap:24px;align-items:start;">
+
+      <!-- Health Ring -->
+      <div class="glass" style="padding:24px;display:flex;flex-direction:column;align-items:center;">
+        <div class="health-ring">
+          <svg viewBox="0 0 100 100">
+            <circle class="track" cx="50" cy="50" r="42"/>
+            <circle class="progress" id="health-arc" cx="50" cy="50" r="42"
+              stroke-dasharray="263.89" stroke-dashoffset="263.89"/>
+          </svg>
+          <div class="value" id="health-value">--</div>
+          <div class="label">Health Index</div>
+        </div>
+      </div>
+
+      <!-- Metric Cards Grid -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;">
+        <div class="metric-card">
+          <div class="metric-value" id="m-agents" style="color:var(--accent);">--</div>
+          <div class="metric-label">Active Agents</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-cost" style="color:var(--success);">--</div>
+          <div class="metric-label">Cost Today</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-budget" style="color:var(--cyan);">--</div>
+          <div class="metric-label">Risk Budget</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-goals" style="color:var(--pink);">--</div>
+          <div class="metric-label">Active Goals</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-tasks" style="color:var(--warning);">--</div>
+          <div class="metric-label">Pending Tasks</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-patterns" style="color:#a78bfa;">--</div>
+          <div class="metric-label">Patterns Found</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-anomalies" style="color:var(--danger);">--</div>
+          <div class="metric-label">Anomalies</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-disabled" style="color:#f87171;">--</div>
+          <div class="metric-label">Disabled</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TABS ==================== -->
+    <section style="padding:24px 32px 0;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;" id="tabs">
+        <button class="tab-btn active" data-tab="overview">Overview</button>
+        <button class="tab-btn" data-tab="agents">Agents & Tools</button>
+        <button class="tab-btn" data-tab="costs">Cost Intelligence</button>
+        <button class="tab-btn" data-tab="safety">Safety & Governance</button>
+        <button class="tab-btn" data-tab="memory">Memory & Patterns</button>
+        <button class="tab-btn" data-tab="goals">Goals & Tasks</button>
+        <button class="tab-btn" data-tab="graph">System Graph</button>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: OVERVIEW ==================== -->
+    <section class="tab-content active" data-tab="overview" style="padding:16px 32px 32px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+        <!-- Subsystem Status -->
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">9 Intelligence Subsystems</h3>
+          <div id="subsystems-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;"></div>
+        </div>
+
+        <!-- Recent Errors -->
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Error Clusters</h3>
+          <div id="error-list" style="max-height:280px;overflow-y:auto;"></div>
+        </div>
+
+        <!-- Model Rankings -->
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Model Rankings</h3>
+          <div id="model-rankings" style="max-height:280px;overflow-y:auto;"></div>
+        </div>
+
+        <!-- Latency Stats -->
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Latency by Task Type</h3>
+          <div id="latency-stats" style="max-height:280px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: AGENTS & TOOLS ==================== -->
+    <section class="tab-content" data-tab="agents" style="padding:16px 32px 32px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Agent Performance</h3>
+          <div id="agent-table" style="overflow-x:auto;"></div>
+        </div>
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Tool Performance</h3>
+          <div id="tool-table" style="overflow-x:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: COST INTELLIGENCE ==================== -->
+    <section class="tab-content" data-tab="costs" style="padding:16px 32px 32px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Cost per Workflow</h3>
+          <div id="cost-workflows" style="overflow-x:auto;"></div>
+        </div>
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Agent ROI</h3>
+          <div id="agent-roi" style="overflow-x:auto;"></div>
+        </div>
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Token Forecast</h3>
+          <div id="token-forecast"></div>
+        </div>
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Cost Anomalies</h3>
+          <div id="cost-anomalies" style="max-height:280px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: SAFETY & GOVERNANCE ==================== -->
+    <section class="tab-content" data-tab="safety" style="padding:16px 32px 32px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Safety Simulator Stats</h3>
+          <div id="safety-stats"></div>
+        </div>
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Governance Risk Budget</h3>
+          <div id="governance-budget"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: MEMORY & PATTERNS ==================== -->
+    <section class="tab-content" data-tab="memory" style="padding:16px 32px 32px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Memory Hierarchy</h3>
+          <div id="memory-status"></div>
+        </div>
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Feedback Patterns</h3>
+          <div id="feedback-patterns" style="max-height:350px;overflow-y:auto;"></div>
+        </div>
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Success Patterns</h3>
+          <div id="success-patterns" style="max-height:280px;overflow-y:auto;"></div>
+        </div>
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Failure Clusters</h3>
+          <div id="failure-clusters" style="max-height:280px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: GOALS & TASKS ==================== -->
+    <section class="tab-content" data-tab="goals" style="padding:16px 32px 32px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Strategic Goals</h3>
+          <div id="goal-summary"></div>
+        </div>
+        <div class="glass" style="padding:24px;">
+          <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Self-Initiated Tasks</h3>
+          <div id="pending-tasks" style="max-height:350px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB: SYSTEM GRAPH ==================== -->
+    <section class="tab-content" data-tab="graph" style="padding:16px 32px 32px;">
+      <div class="glass" style="padding:24px;">
+        <h3 style="font-size:0.9rem;font-weight:600;margin-bottom:16px;color:#cbd5e1;">Subsystem Dependency Graph</h3>
+        <div id="force-graph"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ==================== SCRIPT ==================== -->
+  <script>
+    let data = null;
+    let refreshTimer = null;
+
+    // ─── Tab switching ───
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelector(`.tab-content[data-tab="${btn.dataset.tab}"]`).classList.add('active');
+        if (btn.dataset.tab === 'graph' && data) renderForceGraph(data);
+      });
+    });
+
+    // ─── Fetch data ───
+    async function refresh() {
+      try {
+        const res = await fetch('/api/dashboard/intelligence');
+        data = await res.json();
+        render(data);
+        document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        const statusEl = document.getElementById('bridge-status');
+        if (data.ready) {
+          statusEl.innerHTML = '<span class="dot status-online"></span><span>Live</span>';
+        } else {
+          statusEl.innerHTML = '<span class="dot status-degraded"></span><span>Initializing</span>';
+        }
+      } catch (err) {
+        document.getElementById('bridge-status').innerHTML = '<span class="dot status-offline"></span><span>Offline</span>';
+      }
+    }
+
+    // ─── Render all sections ───
+    function render(d) {
+      if (!d.ready) return;
+
+      // Health ring
+      const score = d.health?.overallScore ?? 0;
+      const circumference = 2 * Math.PI * 42;
+      const offset = circumference - (score / 100) * circumference;
+      const arc = document.getElementById('health-arc');
+      arc.setAttribute('stroke-dashoffset', offset);
+      arc.setAttribute('stroke', score > 70 ? '#22c55e' : score > 40 ? '#f59e0b' : '#ef4444');
+      document.getElementById('health-value').textContent = score;
+      document.getElementById('health-value').style.color = score > 70 ? '#22c55e' : score > 40 ? '#f59e0b' : '#ef4444';
+
+      // Top metrics
+      const scorer = d.scorerReport || {};
+      const agentCount = Object.keys(scorer.agentStats || {}).length;
+      const toolCount = Object.keys(scorer.toolStats || {}).length;
+      document.getElementById('m-agents').textContent = agentCount + toolCount;
+
+      const cost = d.costReport || {};
+      document.getElementById('m-cost').textContent = '$' + (cost.totalCost ?? 0).toFixed(4);
+
+      const budget = d.governanceBudget || {};
+      document.getElementById('m-budget').textContent = '$' + (budget.spentToday ?? 0).toFixed(2) + '/$' + (budget.dailyBudgetUsd ?? 10).toFixed(0);
+
+      const goals = d.goalSummary || {};
+      document.getElementById('m-goals').textContent = goals.activeGoals ?? 0;
+      document.getElementById('m-tasks').textContent = goals.pendingTasks ?? 0;
+
+      const fb = d.feedbackReport || {};
+      document.getElementById('m-patterns').textContent = fb.totalPatterns ?? 0;
+      document.getElementById('m-anomalies').textContent = (cost.anomalies ?? []).length;
+      document.getElementById('m-disabled').textContent = ((scorer.disabled?.tools ?? []).length + (scorer.disabled?.agents ?? []).length);
+
+      renderSubsystems(d);
+      renderScorerTables(d);
+      renderCosts(d);
+      renderSafety(d);
+      renderMemory(d);
+      renderGoals(d);
+      renderErrors(d);
+      renderModelRankings(d);
+      renderLatencyStats(d);
+    }
+
+    // ─── 9 Subsystems Grid ───
+    function renderSubsystems(d) {
+      const subsystems = [
+        { name: 'Scorer', icon: '\u{1F3AF}', active: Object.keys((d.scorerReport?.toolStats) || {}).length > 0, detail: `${(d.scorerReport?.totalToolCalls ?? 0)} tool calls` },
+        { name: 'Memory', icon: '\u{1F9E0}', active: !!(d.memoryStatus), detail: `${Object.keys(d.memoryStatus || {}).length} layers` },
+        { name: 'Governance', icon: '\u{1F6E1}\uFE0F', active: !!(d.governanceBudget?.dailyBudgetUsd), detail: d.governanceBudget?.criticalOps ?? 'Ready' },
+        { name: 'Cost Intel', icon: '\u{1F4B0}', active: (d.costReport?.totalRecords ?? 0) > 0, detail: `${d.costReport?.totalRecords ?? 0} records` },
+        { name: 'Model Router', icon: '\u{1F500}', active: !!(d.modelRankings), detail: `${Object.keys(d.modelRankings || {}).length} models` },
+        { name: 'Observability', icon: '\u{1F4CA}', active: !!(d.dashboard), detail: 'Dashboard ready' },
+        { name: 'Goals', icon: '\u{1F3AF}', active: (d.goalSummary?.activeGoals ?? 0) > 0, detail: `${d.goalSummary?.kpisMet ?? 0}/${d.goalSummary?.kpisTotal ?? 0} KPIs met` },
+        { name: 'Safety', icon: '\u{1F6A8}', active: !!(d.safetyStats), detail: `${d.safetyStats?.totalSimulations ?? 0} sims` },
+        { name: 'Feedback', icon: '\u{1F504}', active: (d.feedbackReport?.totalPatterns ?? 0) > 0, detail: `${d.feedbackReport?.promotedCount ?? 0} promoted` },
+      ];
+
+      const grid = document.getElementById('subsystems-grid');
+      grid.innerHTML = subsystems.map(s => `
+        <div style="background:var(--bg-glass);border:1px solid ${s.active ? 'rgba(34,197,94,0.3)' : 'var(--border)'};border-radius:12px;padding:14px;text-align:center;">
+          <div style="font-size:1.5rem;margin-bottom:4px;">${s.icon}</div>
+          <div style="font-size:0.75rem;font-weight:600;color:${s.active ? '#22c55e' : '#94a3b8'};">${s.name}</div>
+          <div style="font-size:0.65rem;color:#64748b;margin-top:2px;">${s.detail}</div>
+          <div style="width:6px;height:6px;border-radius:50%;margin:6px auto 0;background:${s.active ? '#22c55e' : '#475569'};${s.active ? 'box-shadow:0 0 6px rgba(34,197,94,0.5);' : ''}"></div>
+        </div>
+      `).join('');
+    }
+
+    // ─── Agent & Tool Performance Tables ───
+    function renderScorerTables(d) {
+      const scorer = d.scorerReport || {};
+
+      // Agents
+      const agents = Object.entries(scorer.agentStats || {});
+      document.getElementById('agent-table').innerHTML = agents.length === 0
+        ? '<p style="color:#64748b;font-size:0.8rem;">No agent data yet</p>'
+        : `<table class="data-table">
+          <thead><tr><th>Agent</th><th>Calls</th><th>Success</th><th>Avg Latency</th><th>Trend</th><th>Status</th></tr></thead>
+          <tbody>${agents.map(([id, s]) => `<tr>
+            <td class="mono" style="font-size:0.75rem;">${id}</td>
+            <td>${s.totalCalls}</td>
+            <td><span style="color:${s.successRate > 0.7 ? '#22c55e' : s.successRate > 0.4 ? '#f59e0b' : '#ef4444'}">${(s.successRate * 100).toFixed(0)}%</span></td>
+            <td class="mono">${s.avgLatency.toFixed(0)}ms</td>
+            <td>${trendIcon(s.recentTrend)}</td>
+            <td><span class="status-dot ${s.enabled ? 'status-online' : 'status-offline'}"></span></td>
+          </tr>`).join('')}</tbody></table>`;
+
+      // Tools
+      const tools = Object.entries(scorer.toolStats || {});
+      document.getElementById('tool-table').innerHTML = tools.length === 0
+        ? '<p style="color:#64748b;font-size:0.8rem;">No tool data yet</p>'
+        : `<table class="data-table">
+          <thead><tr><th>Tool</th><th>Calls</th><th>Success</th><th>Avg Latency</th><th>Trend</th><th>Status</th></tr></thead>
+          <tbody>${tools.map(([id, s]) => `<tr>
+            <td class="mono" style="font-size:0.75rem;">${id}</td>
+            <td>${s.totalCalls}</td>
+            <td><span style="color:${s.successRate > 0.7 ? '#22c55e' : s.successRate > 0.4 ? '#f59e0b' : '#ef4444'}">${(s.successRate * 100).toFixed(0)}%</span></td>
+            <td class="mono">${s.avgLatency.toFixed(0)}ms</td>
+            <td>${trendIcon(s.recentTrend)}</td>
+            <td><span class="status-dot ${s.enabled ? 'status-online' : 'status-offline'}"></span></td>
+          </tr>`).join('')}</tbody></table>`;
+    }
+
+    // ─── Cost Intelligence ───
+    function renderCosts(d) {
+      const cost = d.costReport || {};
+
+      // Workflows
+      const workflows = cost.costPerWorkflow || [];
+      document.getElementById('cost-workflows').innerHTML = workflows.length === 0
+        ? '<p style="color:#64748b;font-size:0.8rem;">No cost data yet</p>'
+        : `<table class="data-table">
+          <thead><tr><th>Workflow</th><th>Total</th><th>Avg</th><th>Count</th><th>Success</th></tr></thead>
+          <tbody>${workflows.slice(0, 15).map(w => `<tr>
+            <td class="mono" style="font-size:0.75rem;">${w.workflowType}</td>
+            <td style="color:#22c55e;">$${w.totalCost.toFixed(4)}</td>
+            <td class="mono">$${w.avgCost.toFixed(4)}</td>
+            <td>${w.count}</td>
+            <td>${(w.successRate * 100).toFixed(0)}%</td>
+          </tr>`).join('')}</tbody></table>`;
+
+      // Agent ROI
+      const roi = cost.agentROI || [];
+      document.getElementById('agent-roi').innerHTML = roi.length === 0
+        ? '<p style="color:#64748b;font-size:0.8rem;">No ROI data yet</p>'
+        : `<table class="data-table">
+          <thead><tr><th>Agent</th><th>Cost</th><th>Tasks</th><th>Avg/Task</th><th>Trend</th></tr></thead>
+          <tbody>${roi.map(r => `<tr>
+            <td class="mono" style="font-size:0.75rem;">${r.agentId}</td>
+            <td style="color:#22c55e;">$${r.totalCost.toFixed(4)}</td>
+            <td>${r.totalTasks} (${r.successfulTasks}ok)</td>
+            <td class="mono">$${r.avgCostPerTask.toFixed(4)}</td>
+            <td><span class="anomaly-badge ${r.trend === 'profitable' ? 'anomaly-low' : r.trend === 'break_even' ? 'anomaly-medium' : 'anomaly-high'}">${r.trend}</span></td>
+          </tr>`).join('')}</tbody></table>`;
+
+      // Forecast
+      const fc = cost.forecast || {};
+      document.getElementById('token-forecast').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1.2rem;color:var(--cyan);">${formatNumber(fc.dailyAvgTokens ?? 0)}</div><div class="metric-label">Daily Avg Tokens</div></div>
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1.2rem;color:var(--success);">$${(fc.dailyAvgCost ?? 0).toFixed(4)}</div><div class="metric-label">Daily Avg Cost</div></div>
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1.2rem;color:var(--warning);">$${(fc.projectedMonthlyCost ?? 0).toFixed(2)}</div><div class="metric-label">Monthly Projection</div></div>
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1.2rem;color:${fc.budgetRunoutDate ? '#ef4444' : '#22c55e'};">${fc.budgetRunoutDate ?? 'Within Budget'}</div><div class="metric-label">Budget Runout</div></div>
+        </div>`;
+
+      // Anomalies
+      const anomalies = cost.anomalies || [];
+      document.getElementById('cost-anomalies').innerHTML = anomalies.length === 0
+        ? '<p style="color:#64748b;font-size:0.8rem;">No anomalies detected</p>'
+        : anomalies.map(a => `
+          <div style="padding:10px;border-bottom:1px solid var(--border);">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="anomaly-badge anomaly-${a.severity}">${a.severity}</span>
+              <span style="font-size:0.65rem;color:#64748b;">${new Date(a.detectedAt).toLocaleString()}</span>
+            </div>
+            <p style="font-size:0.8rem;margin-top:6px;">${a.description}</p>
+            <p style="font-size:0.7rem;color:#94a3b8;margin-top:2px;">Expected: $${a.expectedCost.toFixed(4)} | Actual: $${a.actualCost.toFixed(4)}</p>
+          </div>
+        `).join('');
+    }
+
+    // ─── Safety & Governance ───
+    function renderSafety(d) {
+      const safety = d.safetyStats || {};
+      const gov = d.governanceBudget || {};
+
+      document.getElementById('safety-stats').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1.3rem;color:var(--accent);">${safety.totalSimulations ?? 0}</div><div class="metric-label">Total Simulations</div></div>
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1.3rem;color:var(--danger);">${safety.blocked ?? 0}</div><div class="metric-label">Commands Blocked</div></div>
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1.3rem;color:var(--warning);">${safety.highRiskApproved ?? 0}</div><div class="metric-label">High Risk Approved</div></div>
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1.3rem;color:var(--success);">${safety.snapshotsTaken ?? 0}</div><div class="metric-label">Snapshots Taken</div></div>
+        </div>
+        ${(safety.recentSimulations || []).length > 0 ? `
+        <h4 style="font-size:0.8rem;color:#94a3b8;margin-top:16px;margin-bottom:8px;">Recent Simulations</h4>
+        ${(safety.recentSimulations || []).slice(0, 5).map(s => `
+          <div style="padding:8px;border-bottom:1px solid var(--border);font-size:0.75rem;">
+            <span style="color:${s.approved ? '#22c55e' : '#ef4444'};">${s.approved ? 'APPROVED' : 'BLOCKED'}</span>
+            <span class="mono" style="margin-left:8px;color:#94a3b8;">${(s.command || '').slice(0, 60)}</span>
+          </div>
+        `).join('') }` : ''}`;
+
+      document.getElementById('governance-budget').innerHTML = `
+        <div style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:6px;">
+            <span>Daily Budget Used</span>
+            <span class="mono" style="color:var(--success);">$${(gov.spentToday ?? 0).toFixed(2)} / $${(gov.dailyBudgetUsd ?? 10).toFixed(2)}</span>
+          </div>
+          <div class="prog-bar">
+            <div class="prog-fill" style="width:${Math.min(100, ((gov.spentToday ?? 0) / (gov.dailyBudgetUsd ?? 10)) * 100)}%;background:${(gov.spentToday ?? 0) / (gov.dailyBudgetUsd ?? 10) > 0.8 ? '#ef4444' : '#22c55e'};"></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1rem;">${gov.criticalOps ?? '0/5'}</div><div class="metric-label">Critical Ops</div></div>
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1rem;">${gov.highRiskHourly ?? '0/20'}</div><div class="metric-label">High Risk / Hour</div></div>
+          <div class="metric-card"><div class="metric-value mono" style="font-size:1rem;color:var(--success);">$${(gov.remainingToday ?? 0).toFixed(2)}</div><div class="metric-label">Remaining Today</div></div>
+        </div>`;
+    }
+
+    // ─── Memory & Patterns ───
+    function renderMemory(d) {
+      const mem = d.memoryStatus || {};
+      document.getElementById('memory-status').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr;gap:10px;">
+          ${Object.entries(mem).map(([key, val]) => `
+            <div style="background:var(--bg-glass);border:1px solid var(--border);border-radius:10px;padding:12px;">
+              <div style="font-size:0.8rem;font-weight:600;color:#cbd5e1;text-transform:capitalize;">${key.replace(/_/g, ' ')}</div>
+              <div style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">${typeof val === 'object' ? JSON.stringify(val) : val}</div>
+            </div>
+          `).join('')}
+        </div>
+        ${Object.keys(mem).length === 0 ? '<p style="color:#64748b;font-size:0.8rem;">No memory data yet</p>' : ''}`;
+
+      const fb = d.feedbackReport || {};
+      const patterns = fb.topPatterns || [];
+      document.getElementById('feedback-patterns').innerHTML = patterns.length === 0
+        ? '<p style="color:#64748b;font-size:0.8rem;">No patterns recognized yet</p>'
+        : patterns.map(p => `
+          <div style="padding:10px;border-bottom:1px solid var(--border);">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:0.8rem;font-weight:500;">${p.description}</span>
+              <span class="anomaly-badge ${p.promoted ? 'anomaly-low' : 'anomaly-medium'}">${p.promoted ? 'Promoted' : p.occurrences + 'x'}</span>
+            </div>
+          </div>
+        `).join('');
+
+      // Success patterns
+      const sp = d.successPatterns || [];
+      document.getElementById('success-patterns').innerHTML = sp.length === 0
+        ? '<p style="color:#64748b;font-size:0.8rem;">No success patterns yet</p>'
+        : sp.slice(0, 10).map(p => `
+          <div style="padding:8px;border-bottom:1px solid var(--border);font-size:0.75rem;">
+            <span style="color:#22c55e;">${p.taskType || p.type || 'pattern'}</span>
+            <span style="color:#94a3b8;margin-left:8px;">${p.agent || ''} ${p.description || ''}</span>
+          </div>
+        `).join('');
+
+      // Failure clusters
+      const fc = d.failureClusters || [];
+      document.getElementById('failure-clusters').innerHTML = fc.length === 0
+        ? '<p style="color:#64748b;font-size:0.8rem;">No failure clusters</p>'
+        : fc.slice(0, 10).map(c => `
+          <div style="padding:8px;border-bottom:1px solid var(--border);font-size:0.75rem;">
+            <span style="color:#ef4444;">${c.errorType || c.type || 'error'}</span>
+            <span style="color:#94a3b8;margin-left:8px;">${c.count || 1}x — ${c.message || c.description || ''}</span>
+          </div>
+        `).join('');
+    }
+
+    // ─── Goals ───
+    function renderGoals(d) {
+      const goals = d.goalSummary || {};
+      const tasks = d.pendingGoalTasks || [];
+
+      document.getElementById('goal-summary').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="metric-card"><div class="metric-value" style="font-size:1.5rem;color:var(--accent);">${goals.activeGoals ?? 0}</div><div class="metric-label">Active Goals</div></div>
+          <div class="metric-card"><div class="metric-value" style="font-size:1.5rem;color:var(--success);">${goals.completedGoals ?? 0}</div><div class="metric-label">Completed</div></div>
+          <div class="metric-card"><div class="metric-value" style="font-size:1.5rem;color:var(--warning);">${(goals.avgProgress ?? 0).toFixed(0)}%</div><div class="metric-label">Avg Progress</div></div>
+          <div class="metric-card"><div class="metric-value" style="font-size:1.5rem;color:var(--cyan);">${goals.kpisMet ?? 0}/${goals.kpisTotal ?? 0}</div><div class="metric-label">KPIs Met</div></div>
+        </div>
+        <div style="margin-top:16px;">
+          <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:6px;">Overall Progress</div>
+          <div class="prog-bar" style="height:10px;">
+            <div class="prog-fill" style="width:${goals.avgProgress ?? 0}%;background:linear-gradient(90deg,var(--accent),var(--success));"></div>
+          </div>
+        </div>`;
+
+      document.getElementById('pending-tasks').innerHTML = tasks.length === 0
+        ? '<p style="color:#64748b;font-size:0.8rem;">No pending self-initiated tasks</p>'
+        : tasks.map(t => `
+          <div style="padding:10px;border-bottom:1px solid var(--border);">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="anomaly-badge ${t.priority === 'high' ? 'anomaly-high' : t.priority === 'medium' ? 'anomaly-medium' : 'anomaly-low'}">${t.priority}</span>
+              <span style="font-size:0.65rem;color:#64748b;" class="mono">${t.action}</span>
+            </div>
+            <p style="font-size:0.8rem;margin-top:6px;">${t.description}</p>
+          </div>
+        `).join('');
+    }
+
+    // ─── Errors ───
+    function renderErrors(d) {
+      const dashboard = d.dashboard || {};
+      const errors = dashboard.errorClusters || dashboard.recentErrors || [];
+      const el = document.getElementById('error-list');
+      if (!Array.isArray(errors) || errors.length === 0) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.8rem;">No errors recorded</p>';
+        return;
+      }
+      el.innerHTML = errors.slice(0, 15).map(e => `
+        <div style="padding:8px;border-bottom:1px solid var(--border);font-size:0.75rem;">
+          <span style="color:#ef4444;font-weight:500;">${e.type || e.errorType || 'error'}</span>
+          <span style="color:#94a3b8;margin-left:8px;">${e.message || e.description || ''}</span>
+          ${e.count ? `<span style="color:#64748b;margin-left:4px;">(${e.count}x)</span>` : ''}
+        </div>
+      `).join('');
+    }
+
+    // ─── Model Rankings ───
+    function renderModelRankings(d) {
+      const rankings = d.modelRankings || {};
+      const el = document.getElementById('model-rankings');
+      const entries = Object.entries(rankings);
+      if (entries.length === 0) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.8rem;">No model data yet</p>';
+        return;
+      }
+      el.innerHTML = `<table class="data-table">
+        <thead><tr><th>Model</th><th>Score</th><th>Details</th></tr></thead>
+        <tbody>${entries.map(([model, info]) => `<tr>
+          <td class="mono" style="font-size:0.75rem;">${model}</td>
+          <td style="color:var(--accent);">${typeof info === 'number' ? info.toFixed(2) : typeof info === 'object' ? (info.score ?? info.avgScore ?? '-') : info}</td>
+          <td style="color:#94a3b8;font-size:0.7rem;">${typeof info === 'object' ? JSON.stringify(info).slice(0, 80) : ''}</td>
+        </tr>`).join('')}</tbody></table>`;
+    }
+
+    // ─── Latency Stats ───
+    function renderLatencyStats(d) {
+      const stats = d.latencyStats || {};
+      const el = document.getElementById('latency-stats');
+      const entries = Object.entries(stats);
+      if (entries.length === 0) {
+        el.innerHTML = '<p style="color:#64748b;font-size:0.8rem;">No latency data yet</p>';
+        return;
+      }
+      el.innerHTML = `<table class="data-table">
+        <thead><tr><th>Task Type</th><th>Avg</th><th>Details</th></tr></thead>
+        <tbody>${entries.map(([task, info]) => `<tr>
+          <td class="mono" style="font-size:0.75rem;">${task}</td>
+          <td class="mono" style="color:var(--cyan);">${typeof info === 'number' ? info.toFixed(0) + 'ms' : typeof info === 'object' ? ((info.avg ?? info.avgLatency ?? 0)).toFixed(0) + 'ms' : info}</td>
+          <td style="color:#94a3b8;font-size:0.7rem;">${typeof info === 'object' ? `p50:${(info.p50 ?? 0).toFixed(0)}ms p99:${(info.p99 ?? 0).toFixed(0)}ms` : ''}</td>
+        </tr>`).join('')}</tbody></table>`;
+    }
+
+    // ─── Force-Directed Graph ───
+    function renderForceGraph(d) {
+      const container = document.getElementById('force-graph');
+      container.innerHTML = '';
+      const width = container.clientWidth;
+      const height = 400;
+
+      const nodes = [
+        { id: 'Engine', group: 'core', r: 28 },
+        { id: 'Intelligence\nBridge', group: 'core', r: 24 },
+        { id: 'Scorer', group: 'intelligence', r: 18 },
+        { id: 'Memory', group: 'intelligence', r: 18 },
+        { id: 'Governance', group: 'intelligence', r: 18 },
+        { id: 'Cost Intel', group: 'intelligence', r: 18 },
+        { id: 'Model Router', group: 'intelligence', r: 18 },
+        { id: 'Observability', group: 'intelligence', r: 18 },
+        { id: 'Goals', group: 'intelligence', r: 18 },
+        { id: 'Safety', group: 'intelligence', r: 18 },
+        { id: 'Feedback', group: 'intelligence', r: 18 },
+        { id: 'Tool Executor', group: 'execution', r: 20 },
+        { id: 'Evolution', group: 'core', r: 22 },
+        { id: 'Agents', group: 'execution', r: 18 },
+        { id: 'Skills', group: 'execution', r: 16 },
+        { id: 'Crew Orch', group: 'execution', r: 16 },
+      ];
+
+      const links = [
+        { source: 'Engine', target: 'Intelligence\nBridge', strength: 2 },
+        { source: 'Engine', target: 'Tool Executor', strength: 2 },
+        { source: 'Engine', target: 'Agents', strength: 1.5 },
+        { source: 'Intelligence\nBridge', target: 'Scorer', strength: 1 },
+        { source: 'Intelligence\nBridge', target: 'Memory', strength: 1 },
+        { source: 'Intelligence\nBridge', target: 'Governance', strength: 1 },
+        { source: 'Intelligence\nBridge', target: 'Cost Intel', strength: 1 },
+        { source: 'Intelligence\nBridge', target: 'Model Router', strength: 1 },
+        { source: 'Intelligence\nBridge', target: 'Observability', strength: 1 },
+        { source: 'Intelligence\nBridge', target: 'Goals', strength: 1 },
+        { source: 'Intelligence\nBridge', target: 'Safety', strength: 1 },
+        { source: 'Intelligence\nBridge', target: 'Feedback', strength: 1 },
+        { source: 'Tool Executor', target: 'Safety', strength: 1.5 },
+        { source: 'Tool Executor', target: 'Scorer', strength: 1 },
+        { source: 'Tool Executor', target: 'Observability', strength: 1 },
+        { source: 'Evolution', target: 'Intelligence\nBridge', strength: 1.5 },
+        { source: 'Evolution', target: 'Skills', strength: 1 },
+        { source: 'Evolution', target: 'Crew Orch', strength: 1 },
+        { source: 'Agents', target: 'Crew Orch', strength: 1 },
+        { source: 'Model Router', target: 'Engine', strength: 0.5 },
+        { source: 'Feedback', target: 'Memory', strength: 0.5 },
+        { source: 'Goals', target: 'Cost Intel', strength: 0.5 },
+      ];
+
+      const color = d3.scaleOrdinal()
+        .domain(['core', 'intelligence', 'execution'])
+        .range(['#6366f1', '#22c55e', '#06b6d4']);
+
+      const svg = d3.select(container).append('svg')
+        .attr('width', width).attr('height', height);
+
+      // Glow filter
+      const defs = svg.append('defs');
+      const filter = defs.append('filter').attr('id', 'glow');
+      filter.append('feGaussianBlur').attr('stdDeviation', '3').attr('result', 'coloredBlur');
+      const feMerge = filter.append('feMerge');
+      feMerge.append('feMergeNode').attr('in', 'coloredBlur');
+      feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+      const simulation = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(links).id(d => d.id).distance(100))
+        .force('charge', d3.forceManyBody().strength(-350))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collision', d3.forceCollide().radius(d => d.r + 8));
+
+      const link = svg.append('g').selectAll('line')
+        .data(links).join('line')
+        .attr('stroke', '#334155').attr('stroke-opacity', 0.6).attr('stroke-width', d => d.strength);
+
+      const node = svg.append('g').selectAll('g')
+        .data(nodes).join('g')
+        .call(d3.drag()
+          .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+          .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+          .on('end', (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
+        );
+
+      node.append('circle')
+        .attr('r', d => d.r)
+        .attr('fill', d => color(d.group))
+        .attr('fill-opacity', 0.2)
+        .attr('stroke', d => color(d.group))
+        .attr('stroke-width', 2)
+        .style('filter', 'url(#glow)');
+
+      node.append('text')
+        .text(d => d.id)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'central')
+        .attr('fill', '#e2e8f0')
+        .attr('font-size', d => d.r > 22 ? '9px' : '7.5px')
+        .attr('font-weight', d => d.group === 'core' ? '600' : '400')
+        .each(function(d) {
+          const lines = d.id.split('\n');
+          if (lines.length > 1) {
+            const el = d3.select(this);
+            el.text('');
+            lines.forEach((line, i) => {
+              el.append('tspan').text(line).attr('x', 0).attr('dy', i === 0 ? '-0.4em' : '1.1em');
+            });
+          }
+        });
+
+      simulation.on('tick', () => {
+        link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        node.attr('transform', d => `translate(${d.x},${d.y})`);
+      });
+    }
+
+    // ─── Helpers ───
+    function trendIcon(trend) {
+      if (trend === 'improving') return '<span style="color:#22c55e;">&#9650;</span>';
+      if (trend === 'degrading') return '<span style="color:#ef4444;">&#9660;</span>';
+      return '<span style="color:#64748b;">&#9654;</span>';
+    }
+
+    function formatNumber(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return n.toFixed(0);
+    }
+
+    // ─── Init ───
+    refresh();
+    refreshTimer = setInterval(refresh, 15000);
+  </script>
+</body>
+</html>

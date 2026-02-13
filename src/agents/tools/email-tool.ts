@@ -3,6 +3,10 @@ import config from '../../config.js';
 
 let gmailInstance: any = null;
 
+function isSmtpConfigured(): boolean {
+  return !!(config.SMTP_HOST && config.SMTP_USER && config.SMTP_PASS);
+}
+
 async function getGmail() {
   if (gmailInstance) return gmailInstance;
 
@@ -17,21 +21,29 @@ async function getGmail() {
     config.GMAIL_REDIRECT_URI || 'http://localhost:3000/oauth/callback',
   );
   oauth2Client.setCredentials({ refresh_token: config.GMAIL_REFRESH_TOKEN });
-  gmailAuth = oauth2Client;
   gmailInstance = google.gmail({ version: 'v1', auth: oauth2Client });
   return gmailInstance;
 }
 
 export class EmailTool extends BaseTool {
   name = 'email';
-  description = 'Gmail — read, send, reply, search emails.';
+  description = 'Email — read, send, reply, search emails via Gmail or send via SMTP.';
 
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     const action = String(input.action ?? '');
     const gmail = await getGmail();
 
+    // For send action, allow SMTP fallback when Gmail is not configured
+    if (action === 'send' && !gmail && isSmtpConfigured()) {
+      try {
+        return await this.sendViaSmtp(input);
+      } catch (err: any) {
+        return { success: false, output: '', error: `SMTP email error: ${err.message}` };
+      }
+    }
+
     if (!gmail) {
-      return { success: false, output: '', error: 'Gmail not configured. Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN in .env' };
+      return { success: false, output: '', error: 'Email not configured. Set GMAIL_CLIENT_ID/SECRET/REFRESH_TOKEN for full access, or SMTP_HOST/SMTP_USER/SMTP_PASS for send-only.' };
     }
 
     try {
@@ -195,5 +207,17 @@ export class EmailTool extends BaseTool {
     });
     const total = res.data.resultSizeEstimate || 0;
     return { success: true, output: `${total} unread emails` };
+  }
+
+  private async sendViaSmtp(input: Record<string, unknown>): Promise<ToolResult> {
+    const to = String(input.to ?? '');
+    const subject = String(input.subject ?? '');
+    const body = String(input.body ?? '');
+
+    if (!to || !subject) return { success: false, output: '', error: 'to and subject are required' };
+
+    const { sendEmailSmtp } = await import('../../actions/email/smtp.js');
+    await sendEmailSmtp(to, subject, body);
+    return { success: true, output: `Email sent via SMTP to ${to}: "${subject}"` };
   }
 }

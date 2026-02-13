@@ -31,6 +31,7 @@ export interface AIRequest {
 
 export interface AIResponse {
   content: string;
+  thinking?: string;
   toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown> }>;
   usage: { inputTokens: number; outputTokens: number };
   stopReason: string;
@@ -285,29 +286,116 @@ class ClaudeCodeProviderAdapter implements ProviderClient {
   }
 
   async chat(request: AIRequest): Promise<AIResponse> {
+    // Build system prompt — embed tool definitions when tools are provided
+    let system = request.systemPrompt;
+    const hasTools = request.tools && request.tools.length > 0;
+
+    if (hasTools) {
+      system += this.buildToolSection(request.tools!);
+    }
+
+    // Serialize conversation messages (handles text + tool_use/tool_result blocks)
+    const message = this.serializeMessages(request.messages);
+
     const response = await this.provider.chat({
-      system: request.systemPrompt,
-      message: typeof request.messages[request.messages.length - 1]?.content === 'string'
-        ? request.messages[request.messages.length - 1].content as string
-        : request.messages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n'),
+      system,
+      message,
       maxTokens: request.maxTokens,
       model: request.model,
     });
 
-    // Estimate savings: average API cost for similar request
+    // Parse tool calls from response text (only when tools are available)
+    const { text, toolCalls } = hasTools
+      ? this.extractToolCalls(response.text)
+      : { text: response.text, toolCalls: [] as Array<{ id: string; name: string; input: Record<string, unknown> }> };
+
+    // Estimate savings vs API
     const estimatedApiCost = ((response.usage?.input_tokens ?? 500) * 0.003 + (response.usage?.output_tokens ?? 200) * 0.015) / 1000;
     this.savingsUsd += estimatedApiCost;
 
     return {
-      content: response.text,
+      content: text,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       usage: {
         inputTokens: response.usage?.input_tokens ?? 0,
         outputTokens: response.usage?.output_tokens ?? 0,
       },
-      stopReason: 'end_turn',
+      stopReason: toolCalls.length > 0 ? 'tool_use' : 'end_turn',
       provider: 'claude-code',
       modelUsed: response.model,
     };
+  }
+
+  /** Embed tool definitions into system prompt for CLI-based tool calling */
+  private buildToolSection(tools: ToolDefinition[]): string {
+    const toolList = tools.map((t, i) => {
+      const schema = JSON.stringify(t.input_schema, null, 0);
+      return `${i + 1}. **${t.name}**: ${t.description}\n   Parameters: ${schema}`;
+    }).join('\n');
+
+    return `\n\n## Tools Available — YOU MUST USE THEM
+You have access to tools. To call a tool, output a tool_call XML block:
+
+<tool_call>{"name": "tool_name", "input": {"param": "value"}}</tool_call>
+
+RULES:
+- You MUST call tools when the user asks you to DO something. NEVER describe what you would do — just DO IT.
+- You may call multiple tools in one response (use separate <tool_call> blocks for each).
+- After all tool results come back, continue with more tool calls or give your final text answer.
+- NEVER ask the user for permission to use a tool. NEVER suggest running shell commands manually. Just call the tool.
+- Use <tool_call> tags ONLY for actual tool invocations. Never include them in explanations.
+
+${toolList}`;
+  }
+
+  /** Serialize messages including tool_use/tool_result content blocks into text */
+  private serializeMessages(messages: Message[]): string {
+    const parts: string[] = [];
+
+    for (const msg of messages) {
+      if (typeof msg.content === 'string') {
+        parts.push(msg.content);
+      } else if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (typeof block === 'string') {
+            parts.push(block);
+          } else if (block.type === 'text') {
+            parts.push(block.text);
+          } else if (block.type === 'tool_use') {
+            parts.push(`<tool_call>\n${JSON.stringify({ name: block.name, input: block.input })}\n</tool_call>`);
+          } else if (block.type === 'tool_result') {
+            const label = block.is_error ? '[Tool Error]' : '[Tool Result]';
+            parts.push(`${label}: ${typeof block.content === 'string' ? block.content : JSON.stringify(block.content)}`);
+          }
+        }
+      }
+    }
+
+    return parts.join('\n\n');
+  }
+
+  /** Extract <tool_call> blocks from CLI response text */
+  private extractToolCalls(text: string): { text: string; toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> } {
+    const calls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
+    const regex = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
+    let match;
+    let idx = 0;
+
+    while ((match = regex.exec(text)) !== null) {
+      try {
+        const parsed = JSON.parse(match[1].trim());
+        calls.push({
+          id: `cli_${Date.now()}_${idx++}`,
+          name: parsed.name,
+          input: parsed.input ?? {},
+        });
+      } catch {
+        // Skip malformed tool call JSON
+      }
+    }
+
+    const cleanText = text.replace(/<tool_call>\s*[\s\S]*?\s*<\/tool_call>/g, '').trim();
+    return { text: cleanText, toolCalls: calls };
   }
 
   getProvider(): ClaudeCodeProvider { return this.provider; }
