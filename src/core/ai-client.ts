@@ -578,6 +578,15 @@ const FREE_FALLBACK_MODELS = [
   'nvidia/nemotron-nano-9b-v2:free',
 ];
 
+// ── Anthropic → OpenRouter model ID mapping ─────────────────────────
+// When an Anthropic-format model ID lands on OpenRouter, swap to the OR equivalent
+const ANTHROPIC_TO_OPENROUTER: Record<string, string> = {
+  'claude-sonnet-4-20250514': 'anthropic/claude-sonnet-4',
+  'claude-opus-4-20250514':   'anthropic/claude-opus-4',
+  'claude-3-5-sonnet-20241022': 'anthropic/claude-3.5-sonnet',
+  'claude-3-5-haiku-20241022':  'anthropic/claude-3.5-haiku',
+};
+
 // ── Provider Mode Fallback Chains ────────────────────────────────────
 const PROVIDER_FALLBACK_CHAINS: Record<string, string[]> = {
   max:     ['claude-code', 'anthropic', 'openrouter', 'openai', 'ollama'],
@@ -729,6 +738,11 @@ export class AIClient {
           if (!modelStr || modelStr === 'undefined') {
             // OpenRouter fallback: use strong model (Claude Sonnet via OR, not free junk)
             requestForProvider = { ...sanitizedRequest, model: config.OPENROUTER_DEFAULT_MODEL };
+          } else if (!modelStr.includes('/')) {
+            // Anthropic-format model ID (e.g. claude-opus-4-20250514) — map to OpenRouter equivalent
+            const mapped = ANTHROPIC_TO_OPENROUTER[modelStr];
+            requestForProvider = { ...sanitizedRequest, model: mapped ?? config.OPENROUTER_DEFAULT_MODEL };
+            logger.info('Mapped Anthropic model ID to OpenRouter', { from: modelStr, to: mapped ?? config.OPENROUTER_DEFAULT_MODEL });
           }
           // Inject native OpenRouter fallback chain — lets OR handle model failover internally (faster than app-level retry)
           if (!requestForProvider.fallbackModels?.length) {
