@@ -235,7 +235,7 @@ export class PluginLoader {
   }
 
   async shutdown(): Promise<void> {
-    for (const [name, plugin] of this.plugins) {
+    for (const [, plugin] of this.plugins) {
       if (plugin.loaded && plugin.instance?.shutdown) {
         try {
           await plugin.instance.shutdown();

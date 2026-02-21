@@ -28,7 +28,10 @@ export function chunkText(text: string, source: string, chunkSize = 1000, overla
     if (chunkContent.length > 50) {
       chunks.push({ id: `${source}-${index}`, text: chunkContent, source, index: index++ });
     }
-    start = chunkEnd - overlap;
+    // Advance start — if we've reached the end of text, stop (prevents infinite loop
+    // when text is shorter than chunkSize, where overlap would push start backwards)
+    const nextStart = chunkEnd - overlap;
+    start = nextStart <= start ? text.length : nextStart;
   }
 
   logger.info('Text chunked', { source, chunks: chunks.length, totalChars: text.length });

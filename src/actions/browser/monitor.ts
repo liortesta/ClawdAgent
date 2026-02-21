@@ -95,7 +95,7 @@ export class WebMonitor {
   }
 
   stopAll(): void {
-    for (const [id, interval] of this.intervals) {
+    for (const [, interval] of this.intervals) {
       clearInterval(interval);
     }
     this.intervals.clear();

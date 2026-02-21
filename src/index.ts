@@ -8,7 +8,7 @@ import { SelfImprove } from './core/self-improve.js';
 import { ProactiveThinker } from './core/proactive-thinker.js';
 import { setAutoToolDeps } from './agents/tools/auto-tool.js';
 import { AutoUpgrade } from './core/auto-upgrade.js';
-import { MCPClient } from './core/mcp-client.js';
+import type { MCPClient as _MCPClient } from './core/mcp-client.js';
 import { MCPManager } from './core/mcp-manager.js';
 import { CronEngine } from './core/cron-engine.js';
 import { UsageTracker } from './core/usage-tracker.js';
@@ -32,10 +32,8 @@ import { setCronToolEngine } from './agents/tools/cron-tool.js';
 import { setWorkflowToolDeps } from './agents/tools/workflow-tool.js';
 import { setAnalyticsToolDeps } from './agents/tools/analytics-tool.js';
 import { setRAGEngineRef } from './agents/tools/rag-tool.js';
-// Round 11 imports
 import { setClaudeCodeToolProvider } from './agents/tools/claude-code-tool.js';
 import { setClaudeCodeSavingsGetter } from './agents/tools/analytics-tool.js';
-// Round 10 imports
 import { initConfigFiles, loadMainConfig } from './core/config-loader.js';
 import { BehaviorEngine } from './core/behavior-engine.js';
 import { AgentQueueManager } from './core/agent-queue.js';
@@ -53,8 +51,9 @@ import { EvolutionEngine } from './core/evolution-engine.js';
 import { setPluginLoader, setToolCreator } from './core/tool-executor.js';
 import { ToolCreator } from './core/tool-creator.js';
 import { initBridge, runPeriodicIntelligence, isBridgeReady } from './core/intelligence-bridge.js';
+import { registerPromoterCron, setPromoterAI } from './core/auto-promoter.js';
 import type { Message } from './core/ai-client.js';
-import type { BaseInterface } from './interfaces/base.js';
+// BaseInterface type used in variable declarations below
 
 // Cache platform ID → DB user ID mapping
 const userIdCache = new Map<string, string>();
@@ -163,9 +162,16 @@ async function main() {
     logger.debug('Auto-link check skipped', { error: err.message });
   }
 
-  // 2. Cache
+  // 2. Cache (optional — app works without Redis)
   initCache();
-  logger.info('📦 Redis cache connected');
+  // Give Redis 2 seconds to connect before deciding if queues can start
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  const { isCacheAvailable } = await import('./memory/cache.js');
+  if (isCacheAvailable()) {
+    logger.info('📦 Redis cache connected');
+  } else {
+    logger.warn('📦 Redis not available — running without cache (queues disabled)');
+  }
 
   // 2a. Behavior Engine
   const behaviorEngine = new BehaviorEngine();
@@ -249,11 +255,24 @@ async function main() {
 
     getUserServers: async (platformUserId: string): Promise<string> => {
       try {
+        const parts: string[] = [];
+        // DB servers (per-user)
         const dbId = findDbUserId(platformUserId);
-        if (!dbId) return '';
-        const servers = await getUserServers(dbId);
-        if (servers.length === 0) return '';
-        return servers.map(s => `- ${s.name}: ${s.host}:${s.port} (${s.status})`).join('\n');
+        if (dbId) {
+          const servers = await getUserServers(dbId);
+          parts.push(...servers.map(s => `- ${s.name}: ${s.host}:${s.port} (${s.status})`));
+        }
+        // Dashboard JSON servers (global — added via web UI)
+        try {
+          const { getServerListForAgent } = await import('./interfaces/web/routes/servers-api.js');
+          const dashServers = getServerListForAgent();
+          for (const ds of dashServers) {
+            if (!parts.some(p => p.includes(ds.host))) {
+              parts.push(`- ${ds.name}: ${ds.host}:${ds.port} [${ds.user}] (${ds.status})`);
+            }
+          }
+        } catch { /* servers-api not available */ }
+        return parts.length > 0 ? parts.join('\n') : '';
       } catch (err: any) {
         logger.warn('Failed to load servers', { error: err.message });
         return '';
@@ -495,6 +514,10 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
     } catch { return 'News summary unavailable.'; }
   });
 
+  // Auto-Promoter — continuous promotion across all channels
+  setPromoterAI(aiChatHelper);
+  registerPromoterCron(cronEngine);
+
   // Register default workflow action handlers
   workflowEngine.registerHandler('send_message', async (config) => {
     return `Message: ${config.message ?? 'ok'}`;
@@ -512,6 +535,25 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
   await cronEngine.loadFromDb().catch(() => {});
   await usageTracker.loadFromDb().catch(() => {});
   await ragEngine.init().catch(() => {});
+
+  // Bootstrap auto-promote cron task — opt-in via AUTO_PROMOTE_ENABLED=true
+  if (process.env.AUTO_PROMOTE_ENABLED === 'true') {
+    const existingPromoTask = cronEngine.listTasks().find(t => t.action === 'auto_promote');
+    if (!existingPromoTask) {
+      await cronEngine.addTask({
+        id: 'auto_promote_system',
+        userId: 'system',
+        name: 'Auto-Promote',
+        expression: process.env.AUTO_PROMOTE_CRON || '0 */6 * * *',
+        action: 'auto_promote',
+        actionData: {},
+        platform: 'web',
+        enabled: true,
+        createdAt: new Date().toISOString(),
+      }).catch(err => logger.warn('Auto-promote cron setup failed', { error: String(err) }));
+      logger.info('📢 Auto-promote cron task created');
+    }
+  }
 
   // Wire cron tool to engine so AI can manage cron tasks
   setCronToolEngine(cronEngine);
@@ -603,10 +645,15 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
     rotateIntervalHours: yamlConfig.security?.rotate_interval_hours ?? 72,
   });
 
-  // 5. Queue
-  startWorker();
-  startScheduler();
-  logger.info('📨 Queue worker and scheduler started');
+  // 5. Queue (requires Redis — skip gracefully if unavailable)
+  try {
+    startWorker();
+    startScheduler();
+    logger.info('📨 Queue worker and scheduler started');
+  } catch (err: any) {
+    logger.warn('⚠️ Queue system skipped — Redis not available', { error: err.message });
+    logger.warn('  Reminders, scheduled jobs, and background tasks will not work until Redis is running');
+  }
 
   // 6. Interfaces
   const interfaces = await startInterfaces(engine);
@@ -673,14 +720,14 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
   }
 
   // 7c. Wire reminder sender to Telegram
-  setReminderSender(async (userId, platform, text) => {
+  setReminderSender(async (userId, _platform, text) => {
     if (telegramInterface) {
       await telegramInterface.sendMessage(userId, text);
     }
   });
 
   // 7c. Wire cron notifier to Telegram
-  cronEngine.setNotifier(async (userId, platform, message) => {
+  cronEngine.setNotifier(async (userId, _platform, message) => {
     if (telegramInterface) {
       await telegramInterface.sendMessage(userId, message);
     }
@@ -703,8 +750,9 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
     heartbeat.start(config.HEARTBEAT_INTERVAL_MS);
   }
 
-  // ── Intelligence: periodic intelligence cycle every 5 minutes ──
-  const INTEL_INTERVAL_MS = 5 * 60 * 1000;
+  // ── Intelligence: periodic intelligence cycle every 15 minutes ──
+  // (reduced from 5min to lower memory pressure)
+  const INTEL_INTERVAL_MS = 15 * 60 * 1000;
   setInterval(async () => {
     if (!isBridgeReady()) return;
     try {
@@ -731,15 +779,22 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
     }
   }, INTEL_INTERVAL_MS);
 
-  // ── Evolution: periodic self-improvement cycle every 30 minutes ──
-  // Light evolution (no external skill fetching) runs every 30min.
-  // Full evolution (with external sources) runs every 6 hours.
-  const EVOLUTION_LIGHT_INTERVAL_MS = 30 * 60 * 1000;
-  const EVOLUTION_FULL_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  // ── Evolution: periodic self-improvement cycle every 2 hours ──
+  // (reduced from 30min to lower memory pressure — was a top OOM contributor)
+  // Full evolution (with external sources) runs every 12 hours.
+  const EVOLUTION_LIGHT_INTERVAL_MS = 2 * 60 * 60 * 1000;
+  const EVOLUTION_FULL_INTERVAL_MS = 12 * 60 * 60 * 1000;
   let lastEvolutionAt = 0;
   let lastFullEvolutionAt = 0;
   setInterval(async () => {
     if (Date.now() - lastEvolutionAt < EVOLUTION_LIGHT_INTERVAL_MS) return;
+    // Memory guard — skip if heap is too high
+    const mem = process.memoryUsage();
+    const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+    if (heapUsedMB > 1500) {
+      logger.info('🧬 Evolution cycle skipped — memory too high', { heapUsedMB });
+      return;
+    }
     try {
       const isFull = Date.now() - lastFullEvolutionAt >= EVOLUTION_FULL_INTERVAL_MS;
       logger.info(`🧬 Periodic evolution cycle starting (${isFull ? 'full' : 'light'})...`);
@@ -764,9 +819,16 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
       logger.debug('Periodic evolution error', { error: err.message });
     }
   }, EVOLUTION_LIGHT_INTERVAL_MS);
-  // Also run a light evolution 30 seconds after startup
+  // Startup evolution delayed to 5 minutes (was 30s — caused OOM on resource-constrained systems)
   setTimeout(async () => {
     try {
+      const mem = process.memoryUsage();
+      const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+      // Skip if heap already above 1.5GB to avoid OOM
+      if (heapUsedMB > 1500) {
+        logger.info('🧬 Startup evolution skipped — memory too high', { heapUsedMB });
+        return;
+      }
       const result = await evolutionEngine.evolve(false);
       lastEvolutionAt = Date.now();
       logger.info('🧬 Startup evolution completed', {
@@ -776,7 +838,7 @@ If no facts to extract, return []. Return ONLY valid JSON, nothing else.`,
     } catch (err: any) {
       logger.debug('Startup evolution error', { error: err.message });
     }
-  }, 30_000);
+  }, 5 * 60 * 1000);
 
   logger.info(`✅ ClawdAgent PRODUCTION v${yamlConfig.agent.version} started with ${interfaces.length} interface(s)`, {
     providers: engine.getAIClient().getAvailableProviders(),

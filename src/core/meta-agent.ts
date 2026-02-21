@@ -130,11 +130,12 @@ Think step by step. What should I do?` }],
     }
   }
 
-  /** Reflect after acting — learn from results */
+  /** Reflect after acting — learn from both failures AND successes */
   async reflect(action: string, result: string, success: boolean): Promise<void> {
     this.selfModel.performance.totalInteractions++;
 
     if (!success) {
+      // ── Failure reflection (existing) ──
       let lessonText = result;
       try {
         const lesson = await this.ai.chat({
@@ -160,6 +161,36 @@ Think step by step. What should I do?` }],
           impact: 0.7,
         });
         this.memory.recordFailure('meta_agent_reflection', action.slice(0, 200), lessonText);
+      }
+    } else {
+      // ── Success reflection (NEW) — learn what works well ──
+      // Only reflect on non-trivial successes (result length > 50 chars suggests meaningful work)
+      if (result.length > 50) {
+        let successPattern = result.slice(0, 200);
+        try {
+          const lesson = await this.ai.chat({
+            model: config.OPENROUTER_API_KEY
+              ? config.OPENROUTER_ECONOMY_MODEL
+              : 'claude-haiku-4-5-20251001',
+            provider: config.OPENROUTER_API_KEY ? 'openrouter' : 'anthropic',
+            systemPrompt: 'Extract what made this action successful in one concise sentence — focus on the pattern or technique that worked. Respond with plain text only.',
+            messages: [{ role: 'user', content: `Action: ${action}\nResult: ${result.slice(0, 500)}` }],
+            maxTokens: 100,
+            temperature: 0.1,
+          });
+          successPattern = lesson.content;
+        } catch { /* use raw result */ }
+
+        // Persist to MemoryHierarchy (strategic layer) — survives restarts.
+        // No TTL — success patterns are permanent knowledge (Google's recommendation).
+        // Impact scales with result length: longer results = more meaningful success.
+        if (this.memory) {
+          const impact = Math.min(0.9, 0.4 + (result.length / 2000));
+          this.memory.store('strategic', `success:${action.slice(0, 80)}`, successPattern, {
+            tags: ['meta-agent', 'success-pattern', 'auto-reflect'],
+            impact,
+          });
+        }
       }
     }
 

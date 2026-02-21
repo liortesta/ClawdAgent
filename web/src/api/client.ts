@@ -144,9 +144,27 @@ export const api = {
   dashboardCron: () => apiRequest<any>('/dashboard/cron'),
   dashboardActivity: () => apiRequest<any[]>('/dashboard/activity'),
   graphData: () => apiRequest<any>('/dashboard/graph'),
+  dashboardHeatmap: () => apiRequest<{ grid: number[][]; period: string }>('/dashboard/heatmap'),
+  dashboardKanban: () => apiRequest<{ columns: Record<string, any[]>; total: number }>('/dashboard/kanban'),
+  dashboardApprovals: () => apiRequest<{ pending: any[]; stats: { pending: number; approvedToday: number; deniedToday: number } }>('/dashboard/approvals'),
+  approveAction: (id: string) => apiRequest<{ ok: boolean }>(`/dashboard/approvals/${id}/approve`, { method: 'POST' }),
+  denyAction: (id: string) => apiRequest<{ ok: boolean }>(`/dashboard/approvals/${id}/deny`, { method: 'POST' }),
+
+  // Claude CLI
+  cliStatus: () => apiRequest<{ available: boolean; authenticated: boolean; cliPath: string; lastCheckAt: number }>('/cli/status'),
+  cliAuth: () => apiRequest<{ ok: boolean; message: string }>('/cli/auth', { method: 'POST' }),
+  cliRecheck: () => apiRequest<{ available: boolean; authenticated: boolean; cliPath: string; lastCheckAt: number }>('/cli/recheck', { method: 'POST' }),
+
+  // WhatsApp
+  whatsappQR: () => apiRequest<{ qr: string | null; qrDataUrl: string | null; status: string }>('/whatsapp/qr'),
+  whatsappStatus: () => apiRequest<{ status: string }>('/whatsapp/status'),
 
   // Models
   getModels: () => apiRequest<{ models: Array<{ id: string; name: string; provider: string; tier: string; supportsHebrew?: boolean; supportsVision?: boolean }> }>('/models'),
+
+  // OpenClaw (direct chat)
+  openclawChat: (text: string) => apiRequest<{ message: string; success: boolean }>('/openclaw/chat', { method: 'POST', body: JSON.stringify({ text }) }),
+  openclawStatus: () => apiRequest<{ status: string; connected: boolean; data?: any }>('/openclaw/status'),
 
   // Generic GET
   get: <T = any>(path: string) => apiRequest<T>(path),

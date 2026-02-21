@@ -199,7 +199,7 @@ export function createWebhookTunnel(): SSHTunnel | null {
     return null;
   }
 
-  // Parse DEFAULT_SSH_SERVER: "root@37.60.225.76" or "user@host"
+  // Parse DEFAULT_SSH_SERVER: "root@1.2.3.4" or "user@host"
   const parts = config.DEFAULT_SSH_SERVER.split('@');
   const user = parts.length > 1 ? parts[0] : 'root';
   const host = parts.length > 1 ? parts[1] : parts[0];

@@ -14,7 +14,9 @@ interface ServerEntry {
   host: string;
   port: number;
   user: string;
+  authMethod: 'key' | 'password';
   keyPath?: string;
+  password?: string;  // Stored encrypted (masked in GET responses)
   tags: string[];
   status: 'online' | 'offline' | 'unknown';
   lastChecked?: string;
@@ -36,17 +38,45 @@ function saveServers(servers: ServerEntry[]): void {
   writeFileSync(SERVERS_FILE, JSON.stringify(servers, null, 2), 'utf-8');
 }
 
+/** Build SSH command with key or password auth */
+function buildSSHCommand(server: ServerEntry, remoteCommand: string): string {
+  const baseOpts = `-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10`;
+  const escaped = remoteCommand.replace(/"/g, '\\"');
+
+  if (server.authMethod === 'password' && server.password) {
+    // Use sshpass for password auth
+    return `sshpass -p '${server.password.replace(/'/g, "'\\''")}' ssh ${baseOpts} -p ${server.port} ${server.user}@${server.host} "${escaped}"`;
+  }
+  const keyArg = server.keyPath ? `-i ${server.keyPath}` : '';
+  return `ssh ${baseOpts} ${keyArg} -p ${server.port} ${server.user}@${server.host} "${escaped}"`;
+}
+
+/** Get raw server list for agent context (no passwords) */
+export function getServerListForAgent(): Array<{ id: string; name: string; host: string; port: number; user: string; status: string }> {
+  try {
+    if (existsSync(SERVERS_FILE)) {
+      const servers: ServerEntry[] = JSON.parse(readFileSync(SERVERS_FILE, 'utf-8'));
+      return servers.map(s => ({ id: s.id, name: s.name, host: s.host, port: s.port, user: s.user, status: s.status }));
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
 export function setupServersRoutes(): Router {
   const router = Router();
 
-  // GET /api/servers — list all servers
+  // GET /api/servers — list all servers (passwords masked)
   router.get('/', (_req: Request, res: Response) => {
-    res.json(loadServers());
+    const servers = loadServers().map(s => ({
+      ...s,
+      password: s.password ? '••••••••' : undefined,
+    }));
+    res.json(servers);
   });
 
   // POST /api/servers — add server
   router.post('/', (req: Request, res: Response) => {
-    const { name, host, port, user, keyPath, tags } = req.body;
+    const { name, host, port, user, authMethod, keyPath, password, tags } = req.body;
     if (!name || !host) {
       res.status(400).json({ error: 'name and host are required' });
       return;
@@ -59,13 +89,25 @@ export function setupServersRoutes(): Router {
       return;
     }
 
+    const method = authMethod === 'password' ? 'password' : 'key';
+    if (method === 'password' && !password) {
+      res.status(400).json({ error: 'Password is required when authMethod is password' });
+      return;
+    }
+    if (method === 'key' && !keyPath) {
+      res.status(400).json({ error: 'Key path is required when authMethod is key' });
+      return;
+    }
+
     const server: ServerEntry = {
       id,
       name,
       host,
       port: port ?? 22,
       user: user ?? 'root',
-      keyPath,
+      authMethod: method,
+      keyPath: method === 'key' ? keyPath : undefined,
+      password: method === 'password' ? password : undefined,
       tags: tags ?? [],
       status: 'unknown',
       addedAt: new Date().toISOString(),
@@ -73,8 +115,8 @@ export function setupServersRoutes(): Router {
 
     servers.push(server);
     saveServers(servers);
-    logger.info(`Server added via dashboard: ${name} (${host})`);
-    res.status(201).json(server);
+    logger.info(`Server added via dashboard: ${name} (${host}) [${method}]`);
+    res.status(201).json({ ...server, password: server.password ? '••••••••' : undefined });
   });
 
   // DELETE /api/servers/:id — remove server
@@ -115,8 +157,7 @@ export function setupServersRoutes(): Router {
     }
 
     try {
-      const keyArg = server.keyPath ? `-i ${server.keyPath}` : '';
-      const sshCmd = `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${keyArg} -p ${server.port} ${server.user}@${server.host} "${command.replace(/"/g, '\\"')}"`;
+      const sshCmd = buildSSHCommand(server, command);
       const { stdout, stderr } = await execAsync(sshCmd, { timeout: 30000 });
       res.json({ output: stdout, stderr, success: true });
     } catch (err: any) {
@@ -134,8 +175,7 @@ export function setupServersRoutes(): Router {
     }
 
     try {
-      const keyArg = server.keyPath ? `-i ${server.keyPath}` : '';
-      const healthCmd = `ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 ${keyArg} -p ${server.port} ${server.user}@${server.host} "uptime && free -h && df -h / | tail -1"`;
+      const healthCmd = buildSSHCommand(server, 'uptime && free -h && df -h / | tail -1');
       const { stdout } = await execAsync(healthCmd, { timeout: 15000 });
       const lines = stdout.trim().split('\n');
 

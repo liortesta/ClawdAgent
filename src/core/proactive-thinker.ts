@@ -1,3 +1,4 @@
+import config from '../config.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -40,7 +41,7 @@ export class ProactiveThinker {
 3. What maintenance should be done?
 
 Current time: ${new Date().toISOString()}
-Time in Israel: ${new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' })}
+Local time: ${new Date().toLocaleString('en-US', { timeZone: config.CRON_TIMEZONE })}
 
 Respond ONLY with JSON:
 {

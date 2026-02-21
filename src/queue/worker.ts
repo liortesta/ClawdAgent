@@ -5,10 +5,17 @@ import { handleReminder } from './jobs/reminder.js';
 import { handleHealthCheck } from './jobs/health-check.js';
 import { handleGithubSync } from './jobs/github-sync.js';
 import { handleCleanup } from './jobs/cleanup.js';
+import { isCacheAvailable } from '../memory/cache.js';
 
 const connection = { url: config.REDIS_URL };
 
-export function startWorker() {
+export function startWorker(): Worker | null {
+  // BullMQ requires Redis — skip gracefully if not available
+  if (!isCacheAvailable()) {
+    logger.warn('Queue worker skipped — Redis not available');
+    return null;
+  }
+
   const worker = new Worker('clawdagent', async (job) => {
     logger.info('Processing job', { name: job.name, id: job.id });
 
@@ -23,6 +30,7 @@ export function startWorker() {
 
   worker.on('completed', (job) => logger.debug('Job completed', { name: job?.name, id: job?.id }));
   worker.on('failed', (job, err) => logger.error('Job failed', { name: job?.name, error: err.message }));
+  worker.on('error', (err) => logger.warn('Worker error (non-fatal)', { error: err.message }));
 
   logger.info('Queue worker started');
   return worker;

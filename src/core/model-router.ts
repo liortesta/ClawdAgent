@@ -18,10 +18,10 @@ export interface ModelOption {
 // Priority: Anthropic Claude first, then Gemini/DeepSeek
 const STRONG_MODELS: ModelOption[] = [
   {
-    id: 'anthropic/claude-sonnet-4',
-    provider: 'openrouter', name: 'Claude Sonnet 4 (OpenRouter)',
+    id: 'anthropic/claude-sonnet-4.6',
+    provider: 'openrouter', name: 'Claude Sonnet 4.6 (OpenRouter)',
     tier: 'mid', costPer1kInput: 0.003, costPer1kOutput: 0.015,
-    maxContext: 200000, strengths: ['coding', 'reasoning', 'tool-use', 'hebrew', 'planning'],
+    maxContext: 1000000, strengths: ['coding', 'reasoning', 'tool-use', 'hebrew', 'planning', 'adaptive-thinking'],
     supportsTools: true, supportsHebrew: true, supportsVision: true,
   },
   {
@@ -39,16 +39,23 @@ const STRONG_MODELS: ModelOption[] = [
     supportsTools: true, supportsHebrew: true, supportsVision: true,
   },
   {
-    id: 'deepseek/deepseek-chat-v3.1',
-    provider: 'openrouter', name: 'DeepSeek V3.1',
-    tier: 'cheap', costPer1kInput: 0.0003, costPer1kOutput: 0.0009,
-    maxContext: 64000, strengths: ['coding', 'general', 'tool-use', 'reasoning'],
+    id: 'meta-llama/llama-4-maverick',
+    provider: 'openrouter', name: 'Llama 4 Maverick (400B MoE)',
+    tier: 'mid', costPer1kInput: 0.0005, costPer1kOutput: 0.00077,
+    maxContext: 1000000, strengths: ['multimodal', 'vision', 'tool-use', 'coding', 'reasoning', 'large-context'],
+    supportsTools: true, supportsHebrew: true, supportsVision: true,
+  },
+  {
+    id: 'deepseek/deepseek-v3.2',
+    provider: 'openrouter', name: 'DeepSeek V3.2',
+    tier: 'cheap', costPer1kInput: 0.00028, costPer1kOutput: 0.00041,
+    maxContext: 128000, strengths: ['coding', 'general', 'tool-use', 'reasoning', 'thinking-toggle'],
     supportsTools: true, supportsHebrew: true, supportsVision: false,
   },
   {
     id: 'deepseek/deepseek-r1-0528',
     provider: 'openrouter', name: 'DeepSeek R1 (Reasoning)',
-    tier: 'mid', costPer1kInput: 0.0008, costPer1kOutput: 0.002,
+    tier: 'mid', costPer1kInput: 0.00055, costPer1kOutput: 0.00219,
     maxContext: 163840, strengths: ['reasoning', 'math', 'analysis', 'planning', 'coding'],
     supportsTools: false, supportsHebrew: false, supportsVision: false,
   },
@@ -56,6 +63,20 @@ const STRONG_MODELS: ModelOption[] = [
 
 // ===== NEW MODELS (Feb 2026) =====
 const NEW_MODELS: ModelOption[] = [
+  {
+    id: 'qwen/qwen3.5-397b-a17b',
+    provider: 'openrouter', name: 'Qwen3.5 397B (MoE, Vision+Video)',
+    tier: 'cheap', costPer1kInput: 0.00015, costPer1kOutput: 0.001,
+    maxContext: 262000, strengths: ['reasoning', 'coding', 'vision', 'video', 'tool-use', 'agentic', 'multilingual', 'large-context'],
+    supportsTools: true, supportsHebrew: true, supportsVision: true,
+  },
+  {
+    id: 'mistralai/mistral-large-3',
+    provider: 'openrouter', name: 'Mistral Large 3 (675B MoE)',
+    tier: 'mid', costPer1kInput: 0.002, costPer1kOutput: 0.006,
+    maxContext: 256000, strengths: ['reasoning', 'coding', 'tool-use', 'vision', 'large-context'],
+    supportsTools: true, supportsHebrew: false, supportsVision: true,
+  },
   {
     id: 'zhipu/glm-5',
     provider: 'openrouter', name: 'GLM-5 (744B)',
@@ -77,17 +98,38 @@ const NEW_MODELS: ModelOption[] = [
     maxContext: 128000, strengths: ['fast', 'tool-use', 'thinking', 'general'],
     supportsTools: true, supportsHebrew: false, supportsVision: false,
   },
-  {
-    id: 'qwen/qwen3-coder-next',
-    provider: 'openrouter', name: 'Qwen3 Coder Next',
-    tier: 'mid', costPer1kInput: 0.0005, costPer1kOutput: 0.002,
-    maxContext: 128000, strengths: ['coding', 'agentic', 'tool-use', 'local-dev'],
-    supportsTools: true, supportsHebrew: false, supportsVision: false,
-  },
 ];
 
 // ===== FREE MODELS — Only for sub-agents and helpers =====
 const FREE_MODELS: ModelOption[] = [
+  {
+    id: 'meta-llama/llama-4-scout:free',
+    provider: 'openrouter', name: 'Llama 4 Scout (10M ctx)',
+    tier: 'free', costPer1kInput: 0, costPer1kOutput: 0,
+    maxContext: 10000000, strengths: ['tool-use', 'vision', 'multilingual', 'coding', 'large-context'],
+    supportsTools: true, supportsHebrew: true, supportsVision: true,
+  },
+  {
+    id: 'mistralai/devstral-2:free',
+    provider: 'openrouter', name: 'Devstral 2 (Best Free Code)',
+    tier: 'free', costPer1kInput: 0, costPer1kOutput: 0,
+    maxContext: 262000, strengths: ['coding', 'agentic', 'tool-use', 'reasoning'],
+    supportsTools: true, supportsHebrew: false, supportsVision: false,
+  },
+  {
+    id: 'qwen/qwen3-coder:free',
+    provider: 'openrouter', name: 'Qwen3 Coder',
+    tier: 'free', costPer1kInput: 0, costPer1kOutput: 0,
+    maxContext: 262000, strengths: ['coding', 'agentic', 'tool-use'],
+    supportsTools: true, supportsHebrew: false, supportsVision: false,
+  },
+  {
+    id: 'google/gemma-3-27b-it:free',
+    provider: 'openrouter', name: 'Gemma 3 27B (Free Vision)',
+    tier: 'free', costPer1kInput: 0, costPer1kOutput: 0,
+    maxContext: 128000, strengths: ['vision', 'general', 'tool-use', 'multilingual'],
+    supportsTools: true, supportsHebrew: false, supportsVision: true,
+  },
   {
     id: 'meta-llama/llama-3.3-70b-instruct:free',
     provider: 'openrouter', name: 'Llama 3.3 70B',
@@ -121,17 +163,24 @@ const FREE_MODELS: ModelOption[] = [
 // ===== ANTHROPIC DIRECT =====
 const ANTHROPIC_MODELS: ModelOption[] = [
   {
-    id: 'claude-sonnet-4-20250514',
-    provider: 'anthropic', name: 'Claude Sonnet 4',
+    id: 'claude-sonnet-4-6',
+    provider: 'anthropic', name: 'Claude Sonnet 4.6',
     tier: 'mid', costPer1kInput: 0.003, costPer1kOutput: 0.015,
-    maxContext: 200000, strengths: ['coding', 'reasoning', 'tool-use', 'hebrew', 'planning'],
+    maxContext: 1000000, strengths: ['coding', 'reasoning', 'tool-use', 'hebrew', 'planning', 'adaptive-thinking'],
     supportsTools: true, supportsHebrew: true, supportsVision: true,
   },
   {
-    id: 'claude-opus-4-20250514',
-    provider: 'anthropic', name: 'Claude Opus 4',
-    tier: 'ultra', costPer1kInput: 0.015, costPer1kOutput: 0.075,
-    maxContext: 200000, strengths: ['architecture', 'complex-reasoning', 'critical-decisions'],
+    id: 'claude-opus-4-6',
+    provider: 'anthropic', name: 'Claude Opus 4.6',
+    tier: 'ultra', costPer1kInput: 0.005, costPer1kOutput: 0.025,
+    maxContext: 1000000, strengths: ['architecture', 'complex-reasoning', 'critical-decisions', 'adaptive-thinking'],
+    supportsTools: true, supportsHebrew: true, supportsVision: true,
+  },
+  {
+    id: 'claude-haiku-4-5-20251001',
+    provider: 'anthropic', name: 'Claude Haiku 4.5',
+    tier: 'cheap', costPer1kInput: 0.001, costPer1kOutput: 0.005,
+    maxContext: 200000, strengths: ['fast', 'tool-use', 'general', 'hebrew'],
     supportsTools: true, supportsHebrew: true, supportsVision: true,
   },
 ];
@@ -140,21 +189,25 @@ const ALL_MODELS = [...STRONG_MODELS, ...NEW_MODELS, ...ANTHROPIC_MODELS, ...FRE
 
 /** Strong fallback models ordered by priority (Claude first) */
 export const STRONG_FALLBACK_CHAIN: string[] = [
-  'anthropic/claude-sonnet-4',
+  'anthropic/claude-sonnet-4.6',
   'google/gemini-2.5-flash',
-  'deepseek/deepseek-chat-v3.1',
+  'qwen/qwen3.5-397b-a17b',
+  'meta-llama/llama-4-maverick',
+  'deepseek/deepseek-v3.2',
   'google/gemini-2.5-pro-preview',
+  'mistralai/mistral-large-3',
   'zhipu/glm-5',
-  'minimax/minimax-m2.5',
-  'qwen/qwen3-coder-next',
 ];
 
-/** Free models for sub-agents only */
+/** Free models for sub-agents only — ordered by capability */
 export const SUB_AGENT_MODELS: string[] = [
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'mistralai/mistral-small-3.1-24b-instruct:free',
-  'nvidia/nemotron-nano-9b-v2:free',
-  'deepseek/deepseek-r1-0528:free',
+  'meta-llama/llama-4-scout:free',                      // 10M context, tools, vision
+  'mistralai/devstral-2:free',                           // best free coding/agentic
+  'qwen/qwen3-coder:free',                              // 262K, strong coding
+  'google/gemma-3-27b-it:free',                          // free vision model
+  'meta-llama/llama-3.3-70b-instruct:free',              // proven reliable
+  'mistralai/mistral-small-3.1-24b-instruct:free',       // fast general
+  'deepseek/deepseek-r1-0528:free',                      // reasoning only
 ];
 
 /**

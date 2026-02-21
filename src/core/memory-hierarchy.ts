@@ -4,6 +4,7 @@ import {
   loadFailurePatterns, upsertFailurePattern,
   loadExperienceRecords, insertExperienceRecord,
 } from '../memory/repositories/memory-persistence.js';
+import { sanitizeForMemory, computeMemoryChecksum, verifyMemoryChecksum } from '../security/content-guard.js';
 
 /** Memory layers as defined in the architecture */
 type MemoryLayer = 'execution' | 'infrastructure' | 'strategic' | 'skill' | 'error';
@@ -20,6 +21,7 @@ interface MemoryEntry {
   createdAt: number;
   lastAccessed: number;
   expiresAt?: number;   // Optional TTL
+  checksum?: string;    // SHA-256 integrity checksum
 }
 
 /** Failure pattern for clustering */
@@ -154,23 +156,35 @@ export class MemoryHierarchy {
     }
   }
 
-  /** Store a memory entry */
+  /** Store a memory entry — sanitizes content and computes integrity checksum */
   store(layer: MemoryLayer, key: string, value: string, opts?: {
     tags?: string[];
     impact?: number;
     ttlMs?: number;
+    source?: string;
   }): string {
     const id = `mem_${layer}_${++this.idCounter}`;
     const now = Date.now();
 
+    // ── Stored Injection Sanitization (Gemini/Claude recommendation) ──
+    // Clean untrusted content before it enters strategic memory
+    const { cleaned, modified, threats } = sanitizeForMemory(value, opts?.source ?? layer);
+    if (modified) {
+      logger.warn('Memory sanitized before storage', { id, layer, key, threats });
+    }
+
+    // ── Memory Integrity Checksum (ChatGPT/Gemini recommendation) ──
+    const checksum = computeMemoryChecksum(key, cleaned, layer);
+
     const entry: MemoryEntry = {
-      id, layer, key, value,
+      id, layer, key, value: cleaned,
       tags: opts?.tags ?? [],
       impact: opts?.impact ?? 0.5,
       accessCount: 0,
       createdAt: now,
       lastAccessed: now,
       expiresAt: opts?.ttlMs ? now + opts.ttlMs : undefined,
+      checksum,
     };
 
     this.memories.set(id, entry);
@@ -212,13 +226,30 @@ export class MemoryHierarchy {
       .sort((a, b) => b.relevance - a.relevance)
       .slice(0, maxResults);
 
-    // Update access stats
+    // Update access stats + verify integrity — quarantine tampered entries (Claude's feedback)
+    const verified: typeof scored = [];
     for (const s of scored) {
+      // ── Memory Integrity Verification ──
+      if (s.entry.checksum) {
+        const valid = verifyMemoryChecksum(s.entry.key, s.entry.value, s.entry.layer, s.entry.checksum);
+        if (!valid) {
+          logger.error('MEMORY TAMPER DETECTED — entry quarantined, not returned', {
+            id: s.entry.id, layer: s.entry.layer, key: s.entry.key,
+          });
+          // Remove tampered entry from active memory
+          this.memories.delete(s.entry.id);
+          if (this.persistenceEnabled) {
+            deleteMemoryEntry(s.entry.id).catch(() => {});
+          }
+          continue; // Skip — do not return tampered data
+        }
+      }
       s.entry.accessCount++;
       s.entry.lastAccessed = now;
+      verified.push(s);
     }
 
-    return scored.map(s => s.entry);
+    return verified.map(s => s.entry);
   }
 
   /** Record a failure for pattern clustering */

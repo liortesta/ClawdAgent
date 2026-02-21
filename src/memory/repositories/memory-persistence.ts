@@ -1,4 +1,4 @@
-import { eq, lt, sql } from 'drizzle-orm';
+import { eq, lt, sql, desc } from 'drizzle-orm';
 import { getDb } from '../database.js';
 import { memoryEntries, failurePatterns, experienceRecords } from '../schema.js';
 import logger from '../../utils/logger.js';
@@ -8,7 +8,7 @@ import logger from '../../utils/logger.js';
 // Bridges in-memory MemoryHierarchy ↔ PostgreSQL for persistence
 // ═══════════════════════════════════════════════════════════════════
 
-/** Load all memory entries from DB */
+/** Load memory entries from DB (limited to 500 most recently accessed to prevent OOM) */
 export async function loadMemoryEntries(): Promise<Array<{
   id: string; layer: string; key: string; value: string;
   tags: string[]; impact: number; accessCount: number;
@@ -16,7 +16,7 @@ export async function loadMemoryEntries(): Promise<Array<{
 }>> {
   try {
     const db = getDb();
-    const rows = await db.select().from(memoryEntries);
+    const rows = await db.select().from(memoryEntries).orderBy(desc(memoryEntries.lastAccessed)).limit(500);
     return rows.map(r => ({
       id: r.id,
       layer: r.layer,
@@ -101,7 +101,8 @@ export async function loadFailurePatterns(): Promise<Array<{
 }>> {
   try {
     const db = getDb();
-    const rows = await db.select().from(failurePatterns);
+    // Only load most recent 100 patterns to avoid OOM (DB may have tens of thousands)
+    const rows = await db.select().from(failurePatterns).orderBy(desc(failurePatterns.lastSeen)).limit(100);
     return rows.map(r => ({
       errorType: r.errorType,
       context: r.context,
@@ -152,7 +153,7 @@ export async function upsertFailurePattern(pattern: {
   }
 }
 
-/** Load experience records from DB */
+/** Load experience records from DB (limited to 200 most recent to prevent OOM) */
 export async function loadExperienceRecords(): Promise<Array<{
   id: string; taskType: string; input: string; output: string;
   success: boolean; agentUsed: string; toolsUsed: string[];
@@ -160,7 +161,7 @@ export async function loadExperienceRecords(): Promise<Array<{
 }>> {
   try {
     const db = getDb();
-    const rows = await db.select().from(experienceRecords);
+    const rows = await db.select().from(experienceRecords).orderBy(desc(experienceRecords.createdAt)).limit(200);
     return rows.map(r => ({
       id: r.id,
       taskType: r.taskType,

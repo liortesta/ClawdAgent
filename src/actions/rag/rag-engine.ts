@@ -16,11 +16,16 @@ export class RAGEngine {
 
   async ingestDocument(filePath: string, userId: string): Promise<{ chunks: number; source: string }> {
     const fileName = filePath.split(/[/\\]/).pop() ?? filePath;
-    logger.info('Ingesting document', { filePath, userId });
+    logger.info('RAG ingest start', { filePath, userId });
 
     const text = await extractText(filePath);
+    logger.info('RAG text extracted', { length: text.length, fileName });
+
     const chunks = chunkText(text, fileName);
+    logger.info('RAG chunked', { chunks: chunks.length });
+
     await this.vectorStore.addChunks(chunks, userId);
+    logger.info('RAG chunks stored', { chunks: chunks.length, fileName });
 
     return { chunks: chunks.length, source: fileName };
   }

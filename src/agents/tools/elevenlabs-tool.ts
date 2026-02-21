@@ -397,7 +397,7 @@ export class ElevenLabsTool extends BaseTool {
 
     // Build multipart form for STT
     const formData = new FormData();
-    const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+    const blob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/mpeg' });
     formData.append('file', blob, 'audio.mp3');
     if (language) {
       formData.append('language_code', language);
@@ -446,7 +446,7 @@ export class ElevenLabsTool extends BaseTool {
 
     // Build multipart form for audio isolation
     const formData = new FormData();
-    const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+    const blob = new Blob([new Uint8Array(audioBuffer)], { type: 'audio/mpeg' });
     formData.append('file', blob, 'audio.mp3');
 
     const response = await fetch(`${ELEVENLABS_BASE_URL}/audio-isolation`, {

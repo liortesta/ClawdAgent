@@ -6,6 +6,8 @@ import { ExternalServiceError } from '../utils/errors.js';
 import { sanitizeUnicode } from '../utils/helpers.js';
 import { convertMessagesToOpenAI, STRONG_FALLBACK_CHAIN } from './model-router.js';
 import { ClaudeCodeProvider } from '../providers/claude-code-provider.js';
+import { getCircuitBreaker, CircuitOpenError } from './circuit-breaker.js';
+import { trackAICall } from './metrics.js';
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -27,28 +29,42 @@ export interface AIRequest {
   model?: string;
   provider?: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'claude-code';
   maxToolIterations?: number;
-  thinkingMode?: 'none' | 'basic' | 'extended';
+  thinkingMode?: 'none' | 'basic' | 'extended' | 'adaptive';
   thinkingBudget?: number;
+  /** Effort level for adaptive thinking (4.6 models): low, medium, high, max (Opus only) */
+  effort?: 'low' | 'medium' | 'high' | 'max';
   /** Sub-agent requests can use cheaper/free models */
   isSubAgent?: boolean;
   /** OpenRouter plugins (e.g. web search, response-healing) */
   plugins?: Array<{ id: string; [key: string]: unknown }>;
-  /** Structured output format (JSON mode or JSON schema) */
+  /** Structured output format — JSON mode or strict JSON schema (GA on 4.5+/Haiku 4.5) */
   responseFormat?: { type: 'json_object' } | { type: 'json_schema'; json_schema: { name: string; strict?: boolean; schema: object } };
   /** OpenRouter native fallback models — tried in order if primary fails */
   fallbackModels?: string[];
   /** OpenRouter provider preferences — control which backends are used */
   providerPreferences?: { order?: string[]; allow_fallbacks?: boolean; require_parameters?: boolean };
+  /** Streaming callback — called with each text token as it arrives from the AI */
+  onTextChunk?: (text: string) => void;
+  /** Called when a new streaming response starts (e.g. new tool iteration) — frontend should clear partial text */
+  onStreamReset?: () => void;
+  /** Enable citation tracking for RAG source attribution */
+  citations?: boolean;
+  /** Enable native Anthropic web search tool (direct API only, not OpenRouter) */
+  webSearch?: boolean;
+  /** Enable 1M context window (beta, 4.6 models only — 2x input pricing over 200K) */
+  extendedContext?: boolean;
 }
 
 export interface AIResponse {
   content: string;
   thinking?: string;
   toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown> }>;
-  usage: { inputTokens: number; outputTokens: number };
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number };
   stopReason: string;
   provider: string;
   modelUsed?: string;
+  /** Citation sources when citations are enabled */
+  citations?: Array<{ text: string; source: string; startIndex?: number; endIndex?: number }>;
 }
 
 interface ProviderClient {
@@ -69,28 +85,121 @@ class AnthropicProvider implements ProviderClient {
   }
 
   async chat(request: AIRequest): Promise<AIResponse> {
-    // Extended thinking support (Anthropic requires temperature=1 for thinking)
-    const useThinking = request.thinkingMode === 'extended';
+    const useThinking = request.thinkingMode === 'extended' || request.thinkingMode === 'adaptive';
+    const modelId = request.model ?? config.AI_MODEL;
+
+    // ── Thinking configuration ──
+    // 4.6 models use adaptive thinking; older use budget_tokens
+    const is46Model = ['claude-opus-4-6', 'claude-sonnet-4-6'].some(m => modelId.includes(m));
+    const isOpus46 = modelId.includes('claude-opus-4-6');
+    const effort = request.effort ?? 'high';
     const thinkingConfig = useThinking
-      ? { thinking: { type: 'enabled' as const, budget_tokens: request.thinkingBudget ?? 10000 } }
+      ? is46Model
+        ? {
+            thinking: { type: 'adaptive' as const },
+            // Effort controls depth: low/medium/high for all 4.6, max for Opus only
+            ...(effort !== 'high' || isOpus46 ? { output_config: { effort: (effort === 'max' && !isOpus46) ? 'high' : effort } } : {}),
+          }
+        : { thinking: { type: 'enabled' as const, budget_tokens: request.thinkingBudget ?? 10000 } }
       : {};
 
-    const response = await this.client.messages.create({
-      model: request.model ?? config.AI_MODEL,
+    // ── Structured output (GA on 4.5+/Haiku 4.5) ──
+    const outputConfig: Record<string, unknown> = {};
+    if (request.responseFormat) {
+      if (request.responseFormat.type === 'json_object') {
+        outputConfig.output_config = { ...((thinkingConfig as any).output_config ?? {}), format: { type: 'json_object' } };
+      } else if (request.responseFormat.type === 'json_schema') {
+        outputConfig.output_config = { ...((thinkingConfig as any).output_config ?? {}), format: { type: 'json_schema', json_schema: request.responseFormat.json_schema } };
+      }
+      // Merge with thinking output_config if present
+      if ((thinkingConfig as any).output_config) {
+        outputConfig.output_config = { ...(thinkingConfig as any).output_config, ...(outputConfig.output_config as any) };
+        delete (thinkingConfig as any).output_config;
+      }
+    }
+
+    // ── Beta headers for optional features ──
+    const betas: string[] = [];
+    if (request.extendedContext && is46Model) betas.push('context-1m-2025-08-07');
+
+    // ── Tools — merge user tools with native Anthropic tools ──
+    const allTools: any[] = request.tools?.length ? [...request.tools] : [];
+    if (request.webSearch) {
+      allTools.push({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 });
+    }
+
+    const params = {
+      model: modelId,
       max_tokens: useThinking ? Math.max(request.maxTokens ?? config.AI_MAX_TOKENS, 16000) : (request.maxTokens ?? config.AI_MAX_TOKENS),
       temperature: useThinking ? 1 : (request.temperature ?? 0.7),
-      system: request.systemPrompt,
+      // Prompt caching: wrap system prompt for automatic cache reuse (90% input cost reduction)
+      system: request.systemPrompt
+        ? [{ type: 'text' as const, text: request.systemPrompt, cache_control: { type: 'ephemeral' as const } }]
+        : undefined,
       messages: request.messages,
-      ...(request.tools?.length ? { tools: request.tools } : {}),
+      ...(allTools.length ? { tools: allTools } : {}),
       ...thinkingConfig,
-    });
+      ...outputConfig,
+      // Citations for RAG source attribution
+      ...(request.citations ? { citations: { enabled: true } } : {}),
+      // Beta features header
+      ...(betas.length ? { betas } : {}),
+    };
+
+    // ── Streaming path ──
+    if (request.onTextChunk) {
+      const stream = this.client.messages.stream(params as any);
+      let textContent = '';
+      let thinkingContent = '';
+
+      stream.on('text', (text: string) => {
+        textContent += text;
+        request.onTextChunk!(text);
+      });
+
+      const finalMessage = await stream.finalMessage();
+
+      // Extract thinking content
+      thinkingContent = finalMessage.content
+        .filter((block: any) => block.type === 'thinking')
+        .map((block: any) => block.thinking ?? '')
+        .join('\n');
+
+      const toolCalls = finalMessage.content
+        .filter(block => block.type === 'tool_use')
+        .map(block => {
+          if (block.type === 'tool_use') {
+            return { id: block.id, name: block.name, input: block.input as Record<string, unknown> };
+          }
+          return null;
+        })
+        .filter(Boolean) as AIResponse['toolCalls'];
+
+      const streamUsage = finalMessage.usage as any;
+      return {
+        content: textContent,
+        thinking: thinkingContent || undefined,
+        toolCalls: toolCalls?.length ? toolCalls : undefined,
+        usage: {
+          inputTokens: streamUsage.input_tokens,
+          outputTokens: streamUsage.output_tokens,
+          cacheReadTokens: streamUsage.cache_read_input_tokens,
+          cacheWriteTokens: streamUsage.cache_creation_input_tokens,
+        },
+        stopReason: finalMessage.stop_reason ?? 'end_turn',
+        provider: 'anthropic',
+        modelUsed: modelId,
+      };
+    }
+
+    // ── Non-streaming path (original) ──
+    const response = await this.client.messages.create(params as any);
 
     const textContent = response.content
       .filter(block => block.type === 'text')
       .map(block => block.type === 'text' ? block.text : '')
       .join('\n');
 
-    // Extract thinking content (extended thinking mode)
     const thinkingContent = response.content
       .filter((block: any) => block.type === 'thinking')
       .map((block: any) => block.thinking ?? '')
@@ -106,14 +215,33 @@ class AnthropicProvider implements ProviderClient {
       })
       .filter(Boolean) as AIResponse['toolCalls'];
 
+    // Extract citations if enabled
+    const citations = request.citations
+      ? response.content
+          .filter((block: any) => block.type === 'text' && block.citations?.length)
+          .flatMap((block: any) => (block.citations ?? []).map((c: any) => ({
+            text: c.cited_text ?? '',
+            source: c.document_title ?? c.document_url ?? 'unknown',
+            startIndex: c.start_char_index,
+            endIndex: c.end_char_index,
+          })))
+      : undefined;
+
+    const usage = response.usage as any;
     return {
       content: textContent,
       thinking: thinkingContent || undefined,
       toolCalls: toolCalls?.length ? toolCalls : undefined,
-      usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens },
+      usage: {
+        inputTokens: usage.input_tokens,
+        outputTokens: usage.output_tokens,
+        cacheReadTokens: usage.cache_read_input_tokens,
+        cacheWriteTokens: usage.cache_creation_input_tokens,
+      },
       stopReason: response.stop_reason ?? 'end_turn',
       provider: 'anthropic',
-      modelUsed: request.model ?? config.AI_MODEL,
+      modelUsed: modelId,
+      citations: citations?.length ? citations : undefined,
     };
   }
 }
@@ -359,16 +487,24 @@ class OpenRouterProvider implements ProviderClient {
       body.provider = request.providerPreferences;
     }
 
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.apiKey}`,
+      'HTTP-Referer': 'https://clawdagent.dev',
+      'X-Title': 'ClawdAgent',
+    };
+
+    // ── Streaming path — token-by-token delivery ──
+    if (request.onTextChunk) {
+      return this.chatStreaming(body, headers, model, request.onTextChunk);
+    }
+
+    // ── Non-streaming path (original) ──
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-        'HTTP-Referer': 'https://clawdagent.dev',
-        'X-Title': 'ClawdAgent',
-      },
+      headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(120000),
     });
 
     if (!response.ok) {
@@ -401,7 +537,7 @@ class OpenRouterProvider implements ProviderClient {
       },
       stopReason: choice?.finish_reason === 'tool_calls' ? 'tool_use' : (choice?.finish_reason ?? 'end_turn'),
       provider: 'openrouter',
-      modelUsed: data.model ?? model, // data.model shows actual model used (useful with fallbacks)
+      modelUsed: data.model ?? model,
     };
   }
 
@@ -426,6 +562,113 @@ class OpenRouterProvider implements ProviderClient {
         completionTokens: stats.data?.tokens_completion,
       });
     } catch { /* non-critical — don't fail on stats */ }
+  }
+
+  /** Streaming chat — reads SSE chunks and forwards text tokens via onTextChunk */
+  private async chatStreaming(
+    body: Record<string, unknown>,
+    headers: Record<string, string>,
+    model: string,
+    onTextChunk: (text: string) => void,
+  ): Promise<AIResponse> {
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...body, stream: true }),
+      signal: AbortSignal.timeout(180000), // 3 min for streaming (tokens arrive gradually)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      const err = new Error(`OpenRouter error ${response.status}: ${errorText}`);
+      (err as any).status = response.status;
+      throw err;
+    }
+
+    let content = '';
+    const toolCallsRaw: Array<{ id: string; function: { name: string; arguments: string } }> = [];
+    let finishReason = '';
+    let usage = { prompt_tokens: 0, completion_tokens: 0 };
+    let modelUsed = model;
+    let generationId = '';
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (!trimmed.startsWith('data: ')) continue;
+
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+            const choice = data.choices?.[0];
+
+            // Text content delta
+            if (choice?.delta?.content) {
+              content += choice.delta.content;
+              onTextChunk(choice.delta.content);
+            }
+
+            // Accumulate tool calls (streamed incrementally)
+            if (choice?.delta?.tool_calls) {
+              for (const tc of choice.delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                if (tc.id) {
+                  toolCallsRaw[idx] = {
+                    id: tc.id,
+                    function: { name: tc.function?.name ?? '', arguments: tc.function?.arguments ?? '' },
+                  };
+                } else if (toolCallsRaw[idx]) {
+                  toolCallsRaw[idx].function.arguments += tc.function?.arguments ?? '';
+                }
+              }
+            }
+
+            if (choice?.finish_reason) finishReason = choice.finish_reason;
+            if (data.usage) usage = data.usage;
+            if (data.model) modelUsed = data.model;
+            if (data.id) generationId = data.id;
+          } catch { /* skip malformed SSE chunks */ }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Fire-and-forget generation stats
+    if (generationId) {
+      this.queryGenerationStats(generationId).catch(() => {});
+    }
+
+    // Parse accumulated tool calls
+    const toolCalls = toolCallsRaw.filter(Boolean).map(tc => ({
+      id: tc.id,
+      name: tc.function.name,
+      input: JSON.parse(tc.function.arguments || '{}'),
+    }));
+
+    return {
+      content,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      usage: {
+        inputTokens: usage.prompt_tokens ?? 0,
+        outputTokens: usage.completion_tokens ?? 0,
+      },
+      stopReason: finishReason === 'tool_calls' ? 'tool_use' : (finishReason ?? 'end_turn'),
+      provider: 'openrouter',
+      modelUsed,
+    };
   }
 }
 
@@ -542,27 +785,60 @@ ${toolList}`;
     return parts.join('\n\n');
   }
 
-  /** Extract <tool_call> blocks from CLI response text */
+  /** Extract <tool_call> blocks from CLI response text.
+   *  Handles: complete blocks, unclosed blocks, and mixed text+tool output.
+   */
   private extractToolCalls(text: string): { text: string; toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> } {
     const calls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
-    const regex = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
-    let match;
     let idx = 0;
 
-    while ((match = regex.exec(text)) !== null) {
+    // 1. Extract complete <tool_call>...</tool_call> blocks
+    const completeRegex = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
+    let match;
+
+    while ((match = completeRegex.exec(text)) !== null) {
       try {
         const parsed = JSON.parse(match[1].trim());
-        calls.push({
-          id: `cli_${Date.now()}_${idx++}`,
-          name: parsed.name,
-          input: parsed.input ?? {},
-        });
+        if (parsed.name) {
+          calls.push({
+            id: `cli_${Date.now()}_${idx++}`,
+            name: parsed.name,
+            input: parsed.input ?? {},
+          });
+        }
       } catch {
         // Skip malformed tool call JSON
       }
     }
 
-    const cleanText = text.replace(/<tool_call>\s*[\s\S]*?\s*<\/tool_call>/g, '').trim();
+    // 2. Remove complete blocks from text
+    let cleanText = text.replace(/<tool_call>\s*[\s\S]*?\s*<\/tool_call>/g, '');
+
+    // 3. Handle unclosed <tool_call> blocks (model started but didn't finish closing tag)
+    const unclosedMatch = cleanText.match(/<tool_call>\s*([\s\S]*)$/);
+    if (unclosedMatch) {
+      try {
+        // Try to extract JSON from unclosed block
+        const jsonStr = unclosedMatch[1].trim().replace(/<\/?tool_call>?/g, '').trim();
+        if (jsonStr) {
+          const parsed = JSON.parse(jsonStr);
+          if (parsed.name) {
+            calls.push({
+              id: `cli_${Date.now()}_${idx++}`,
+              name: parsed.name,
+              input: parsed.input ?? {},
+            });
+          }
+        }
+      } catch {
+        // Unclosed block with malformed JSON — just strip it
+      }
+      cleanText = cleanText.replace(/<tool_call>\s*[\s\S]*$/, '');
+    }
+
+    // 4. Clean up any remaining XML artifacts
+    cleanText = cleanText.replace(/<\/?tool_call>/g, '').trim();
+
     return { text: cleanText, toolCalls: calls };
   }
 
@@ -573,19 +849,56 @@ ${toolList}`;
 
 // ── Free OpenRouter models for 402 (insufficient credits) fallback ───
 const FREE_FALLBACK_MODELS = [
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'mistralai/mistral-small-3.1-24b-instruct:free',
-  'nvidia/nemotron-nano-9b-v2:free',
+  'meta-llama/llama-4-scout:free',                      // 10M context, tools, vision
+  'mistralai/devstral-2:free',                           // best free coding/agentic
+  'qwen/qwen3-coder:free',                              // 262K context, coding
+  'google/gemma-3-27b-it:free',                          // free vision model
+  'meta-llama/llama-3.3-70b-instruct:free',              // proven reliable fallback
+  'mistralai/mistral-small-3.1-24b-instruct:free',       // fast general
 ];
 
 // ── Anthropic → OpenRouter model ID mapping ─────────────────────────
 // When an Anthropic-format model ID lands on OpenRouter, swap to the OR equivalent
 const ANTHROPIC_TO_OPENROUTER: Record<string, string> = {
-  'claude-sonnet-4-20250514': 'anthropic/claude-sonnet-4',
-  'claude-opus-4-20250514':   'anthropic/claude-opus-4',
-  'claude-3-5-sonnet-20241022': 'anthropic/claude-3.5-sonnet',
-  'claude-3-5-haiku-20241022':  'anthropic/claude-3.5-haiku',
+  // 4.6 series (current — Feb 2026)
+  'claude-opus-4-6':              'anthropic/claude-opus-4.6',
+  'claude-sonnet-4-6':            'anthropic/claude-sonnet-4.6',
+  // 4.5 series
+  'claude-sonnet-4-5-20250929':   'anthropic/claude-sonnet-4.5',
+  'claude-opus-4-5-20251101':     'anthropic/claude-opus-4.5',
+  'claude-haiku-4-5-20251001':    'anthropic/claude-haiku-4.5',
+  // 4.1 / 4.0 legacy
+  'claude-opus-4-1-20250805':     'anthropic/claude-opus-4.1',
+  'claude-sonnet-4-20250514':     'anthropic/claude-sonnet-4',
+  'claude-opus-4-20250514':       'anthropic/claude-opus-4',
+  // 3.x deprecated
+  'claude-3-5-sonnet-20241022':   'anthropic/claude-3.5-sonnet',
+  'claude-3-5-haiku-20241022':    'anthropic/claude-3.5-haiku',
 };
+
+// Reverse lookup: OpenRouter dot-notation → also accept as input
+const OPENROUTER_ALIASES: Record<string, string> = {
+  'anthropic/claude-opus-4.6':    'anthropic/claude-opus-4.6',
+  'anthropic/claude-sonnet-4.6':  'anthropic/claude-sonnet-4.6',
+  'anthropic/claude-opus-4.5':    'anthropic/claude-opus-4.5',
+  'anthropic/claude-sonnet-4.5':  'anthropic/claude-sonnet-4.5',
+  'anthropic/claude-haiku-4.5':   'anthropic/claude-haiku-4.5',
+  'anthropic/claude-opus-4.1':    'anthropic/claude-opus-4.1',
+  'anthropic/claude-sonnet-4':    'anthropic/claude-sonnet-4',
+  'anthropic/claude-opus-4':      'anthropic/claude-opus-4',
+};
+
+/** Resolve any model ID to OpenRouter-compatible format */
+function resolveOpenRouterModel(modelId: string): string {
+  // Already an OpenRouter ID
+  if (OPENROUTER_ALIASES[modelId]) return modelId;
+  // Anthropic ID → map to OpenRouter
+  if (ANTHROPIC_TO_OPENROUTER[modelId]) return ANTHROPIC_TO_OPENROUTER[modelId];
+  // Already has org/ prefix → pass through
+  if (modelId.includes('/')) return modelId;
+  // Unknown → pass through and hope for the best
+  return modelId;
+}
 
 // ── Provider Mode Fallback Chains ────────────────────────────────────
 const PROVIDER_FALLBACK_CHAINS: Record<string, string[]> = {
@@ -738,11 +1051,13 @@ export class AIClient {
           if (!modelStr || modelStr === 'undefined') {
             // OpenRouter fallback: use strong model (Claude Sonnet via OR, not free junk)
             requestForProvider = { ...sanitizedRequest, model: config.OPENROUTER_DEFAULT_MODEL };
-          } else if (!modelStr.includes('/')) {
-            // Anthropic-format model ID (e.g. claude-opus-4-20250514) — map to OpenRouter equivalent
-            const mapped = ANTHROPIC_TO_OPENROUTER[modelStr];
-            requestForProvider = { ...sanitizedRequest, model: mapped ?? config.OPENROUTER_DEFAULT_MODEL };
-            logger.info('Mapped Anthropic model ID to OpenRouter', { from: modelStr, to: mapped ?? config.OPENROUTER_DEFAULT_MODEL });
+          } else {
+            // Map any model ID to OpenRouter-compatible format
+            const mapped = resolveOpenRouterModel(modelStr);
+            if (mapped !== modelStr) {
+              requestForProvider = { ...sanitizedRequest, model: mapped };
+              logger.info('Mapped model ID to OpenRouter', { from: modelStr, to: mapped });
+            }
           }
           // Inject native OpenRouter fallback chain — lets OR handle model failover internally (faster than app-level retry)
           if (!requestForProvider.fallbackModels?.length) {
@@ -753,11 +1068,20 @@ export class AIClient {
         }
 
         try {
-          const response = await provider.chat(requestForProvider);
+          const cb = getCircuitBreaker(`ai:${providerName}`, { failureThreshold: 5, cooldownMs: 30_000 });
+          const callStart = Date.now();
+          const response = await cb.execute(() => provider.chat(requestForProvider));
           this.totalTokensUsed.input += response.usage.inputTokens;
           this.totalTokensUsed.output += response.usage.outputTokens;
+          trackAICall(providerName, requestForProvider.model ?? 'default', Date.now() - callStart, response.usage.inputTokens, response.usage.outputTokens, true);
           return response;
         } catch (error: any) {
+          if (error instanceof CircuitOpenError) {
+            logger.warn(`Circuit breaker open for ${providerName}, skipping`, { retryAfterMs: error.retryAfterMs });
+            lastError = error;
+            continue; // Skip to next provider
+          }
+          trackAICall(providerName, requestForProvider.model ?? 'default', 0, 0, 0, false);
           // OpenRouter 402 (insufficient credits) — retry with free models before giving up
           if (providerName === 'openrouter' && error?.status === 402) {
             logger.warn('OpenRouter 402 (insufficient credits) — falling back to free models');
@@ -802,6 +1126,8 @@ export class AIClient {
     const toolsUsed: string[] = [];
 
     while (iterations < MAX_TOOL_ITERATIONS) {
+      // Signal stream reset before each AI call (clears partial text in frontend)
+      if (iterations > 0 && request.onStreamReset) request.onStreamReset();
       lastResponse = await this.chat({ ...request, messages });
       iterations++;
 
@@ -872,6 +1198,67 @@ export class AIClient {
 
   getAvailableProviders(): string[] { return Array.from(this.providers.keys()); }
   getTokensUsed() { return { ...this.totalTokensUsed }; }
+
+  /**
+   * Compact (summarize) old messages to reduce context size.
+   * Keeps the last `keepRecent` messages intact, summarizes the rest.
+   * Uses the Anthropic API compaction approach for long conversations.
+   */
+  async compactMessages(
+    messages: Message[],
+    _systemPrompt: string,
+    keepRecent = 6,
+  ): Promise<{ compacted: Message[]; tokensSaved: number }> {
+    if (messages.length <= keepRecent + 2) {
+      return { compacted: messages, tokensSaved: 0 };
+    }
+
+    const oldMessages = messages.slice(0, -keepRecent);
+    const recentMessages = messages.slice(-keepRecent);
+
+    // Estimate tokens (rough: 4 chars per token)
+    const oldTokensEstimate = oldMessages.reduce((sum, m) => {
+      const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      return sum + Math.ceil(text.length / 4);
+    }, 0);
+
+    // Only compact if we'd save meaningful tokens
+    if (oldTokensEstimate < 2000) {
+      return { compacted: messages, tokensSaved: 0 };
+    }
+
+    try {
+      const summaryResponse = await this.chat({
+        systemPrompt: 'You are a conversation summarizer. Summarize the key points, decisions, and context from the conversation below. Be concise but preserve all important technical details, code references, and user preferences. Output only the summary.',
+        messages: [
+          ...oldMessages,
+          { role: 'user', content: 'Summarize the conversation above. Preserve all technical details and decisions.' },
+        ],
+        maxTokens: 2000,
+        temperature: 0.3,
+        effort: 'low',
+      });
+
+      const summaryMessage: Message = {
+        role: 'user',
+        content: `[Conversation Summary]\n${summaryResponse.content}\n[End Summary — recent messages follow]`,
+      };
+
+      const compacted = [summaryMessage, ...recentMessages];
+      const savedTokens = oldTokensEstimate - Math.ceil(summaryResponse.content.length / 4);
+
+      logger.info('Messages compacted', {
+        originalCount: messages.length,
+        compactedCount: compacted.length,
+        tokensSaved: savedTokens,
+      });
+
+      return { compacted, tokensSaved: Math.max(0, savedTokens) };
+    } catch (err: any) {
+      logger.warn('Message compaction failed, returning original', { error: err.message });
+      return { compacted: messages, tokensSaved: 0 };
+    }
+  }
 }
 
 // Re-export types for backward compatibility

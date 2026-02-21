@@ -4,6 +4,7 @@ import { verifyToken } from '../../../security/auth.js';
 import logger from '../../../utils/logger.js';
 
 const AUTH_TIMEOUT_MS = 10000; // 10 seconds to authenticate
+const PENDING_RESPONSE_TTL_MS = 5 * 60 * 1000; // 5 minutes — keep undelivered responses for reconnection
 
 // ─── Live Progress System ───────────────────────────────────────────────────
 // Allows the engine/tools to push progress updates to connected WebSocket clients
@@ -22,6 +23,38 @@ const progressListeners = new Map<string, ProgressCallback>();
 export function emitProgress(userId: string, event: ProgressEvent) {
   const listener = progressListeners.get(userId);
   if (listener) listener(event);
+}
+
+// ─── Pending Response Queue ─────────────────────────────────────────────────
+// Stores responses that were computed while the client was disconnected
+interface PendingResponse {
+  conversationId?: string;
+  data: any;
+  timestamp: number;
+}
+const pendingResponses = new Map<string, PendingResponse[]>();
+
+function storePendingResponse(userId: string, conversationId: string | undefined, data: any) {
+  if (!pendingResponses.has(userId)) pendingResponses.set(userId, []);
+  pendingResponses.get(userId)!.push({ conversationId, data, timestamp: Date.now() });
+}
+
+function flushPendingResponses(userId: string, ws: WebSocket): number {
+  const pending = pendingResponses.get(userId);
+  if (!pending || pending.length === 0) return 0;
+
+  const now = Date.now();
+  let delivered = 0;
+
+  for (const item of pending) {
+    // Skip expired responses
+    if (now - item.timestamp > PENDING_RESPONSE_TTL_MS) continue;
+    sendSafe(ws, { type: 'recovered_message', data: item.data });
+    delivered++;
+  }
+
+  pendingResponses.delete(userId);
+  return delivered;
 }
 
 // ─── WebSocket Setup ────────────────────────────────────────────────────────
@@ -65,6 +98,11 @@ export function setupWebSocket(wss: WebSocketServer, engine: Engine) {
             user = verifyToken(msg.token);
             logger.info('WebSocket connected (message auth)', { userId: user.userId });
             ws.send(JSON.stringify({ type: 'auth', data: { ok: true, userId: user.userId } }));
+            // Flush any pending responses from before disconnect
+            const recovered = flushPendingResponses(user.userId, ws);
+            if (recovered > 0) {
+              logger.info(`Delivered ${recovered} pending response(s) after reconnect`, { userId: user.userId });
+            }
             setupMessageHandler(ws, engine, user);
           } else {
             ws.close(4001, 'First message must be auth');
@@ -76,6 +114,11 @@ export function setupWebSocket(wss: WebSocketServer, engine: Engine) {
       return;
     }
 
+    // Flush any pending responses (header-auth path)
+    const recovered = flushPendingResponses(user.userId, ws);
+    if (recovered > 0) {
+      logger.info(`Delivered ${recovered} pending response(s) after reconnect`, { userId: user.userId });
+    }
     setupMessageHandler(ws, engine, user);
   });
 }
@@ -126,7 +169,6 @@ function setupMessageHandler(ws: WebSocket, engine: Engine, user: { userId: stri
       cancelled = false;
 
       // ── Smart progress tracking ──
-      let lastRealEvent = '';
       let lastRealEventTime = Date.now();
       let currentAgent = '';
       let currentTool = '';
@@ -135,7 +177,6 @@ function setupMessageHandler(ws: WebSocket, engine: Engine, user: { userId: stri
       // Register progress listener for this user
       progressListeners.set(user.userId, (event) => {
         if (cancelled) return;
-        lastRealEvent = event.message;
         lastRealEventTime = Date.now();
         if (event.agent) currentAgent = event.agent;
         if (event.tool) currentTool = event.tool;
@@ -176,17 +217,29 @@ function setupMessageHandler(ws: WebSocket, engine: Engine, user: { userId: stri
       }, 10000);
 
       try {
+        // Signal streaming start to client
+        sendSafe(ws, { type: 'stream_start', data: { conversationId } });
+
         const response = await engine.process({
           platform: 'web', userId: user.userId, userName: user.userId, chatId: 'ws', text, userRole: user.role,
           conversationId, responseMode, model,
           onProgress: (event) => {
             if (cancelled) return;
-            lastRealEvent = event.message;
             lastRealEventTime = Date.now();
             if (event.agent) currentAgent = event.agent;
             if (event.tool) currentTool = event.tool;
             if (event.type === 'tool') toolIterations++;
             sendSafe(ws, { type: 'progress', data: event });
+          },
+          // Stream text tokens to client as they arrive
+          onTextChunk: (text) => {
+            if (cancelled) return;
+            sendSafe(ws, { type: 'text_chunk', data: { text } });
+          },
+          // Reset streaming when a new tool iteration starts
+          onStreamReset: () => {
+            if (cancelled) return;
+            sendSafe(ws, { type: 'stream_reset', data: {} });
           },
         });
 
@@ -197,14 +250,23 @@ function setupMessageHandler(ws: WebSocket, engine: Engine, user: { userId: stri
 
         const elapsed = Math.round((Date.now() - startTime) / 1000);
 
-        sendSafe(ws, { type: 'message', data: {
+        const responseData = {
           text: response.text,
           thinking: response.thinking,
           agent: response.agentUsed,
           provider: response.provider,
           tokens: response.tokensUsed ? response.tokensUsed.input + response.tokensUsed.output : undefined,
           elapsed,
-        } });
+          conversationId,
+        };
+
+        // If WS disconnected during processing, store for later delivery
+        if (ws.readyState !== WebSocket.OPEN) {
+          storePendingResponse(user.userId, conversationId, responseData);
+          logger.info('Response stored in pending queue (client disconnected)', { userId: user.userId, conversationId });
+        } else {
+          sendSafe(ws, { type: 'message', data: responseData });
+        }
       } catch (error: any) {
         cleanup();
         if (!cancelled) {

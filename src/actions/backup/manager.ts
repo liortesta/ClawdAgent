@@ -1,5 +1,6 @@
 import { writeFile, readFile, mkdir } from 'fs/promises';
 import { join } from 'path';
+import { sql } from 'drizzle-orm';
 import { getDb } from '../../memory/database.js';
 import logger from '../../utils/logger.js';
 
@@ -18,7 +19,7 @@ export async function createBackup(): Promise<string> {
 
     for (const table of tables) {
       try {
-        const result = await db.execute(`SELECT * FROM ${table}`);
+        const result = await db.execute(sql.raw(`SELECT * FROM ${table}`));
         data[table] = result.rows as any[];
       } catch { data[table] = []; }
     }
@@ -43,10 +44,9 @@ export async function restoreBackup(filepath: string): Promise<{ restored: numbe
       try {
         const cols = Object.keys(row);
         const vals = Object.values(row);
-        const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
-        await db.execute(
-          `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
-          vals,
+        // Use raw query via pg for restore (Drizzle sql`` doesn't support dynamic column lists)
+        await (db as any).execute(
+          sql.raw(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${vals.map((_: any, i: number) => `'${String(vals[i]).replace(/'/g, "''")}'`).join(', ')}) ON CONFLICT DO NOTHING`),
         );
         restored++;
       } catch {}

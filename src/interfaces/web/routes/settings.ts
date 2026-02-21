@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import logger from '../../../utils/logger.js';
 
 const SETTINGS_FILE = join(process.cwd(), 'data', 'settings.json');
@@ -17,6 +16,13 @@ interface AppSettings {
     brave: { apiKey: string; enabled: boolean };
     telegram: { botToken: string; enabled: boolean };
     discord: { botToken: string; enabled: boolean };
+  };
+  exchanges: {
+    binance: { apiKey: string; apiSecret: string; enabled: boolean };
+    binance_secret: { apiSecret: string; enabled: boolean };
+    okx: { apiKey: string; apiSecret: string; passphrase: string; enabled: boolean };
+    okx_secret: { apiSecret: string; enabled: boolean };
+    okx_passphrase: { passphrase: string; enabled: boolean };
   };
   budget: {
     dailyLimit: number;
@@ -39,6 +45,13 @@ function getDefaultSettings(): AppSettings {
       brave: { apiKey: process.env.BRAVE_API_KEY ?? '', enabled: !!process.env.BRAVE_API_KEY },
       telegram: { botToken: process.env.TELEGRAM_BOT_TOKEN ?? '', enabled: !!process.env.TELEGRAM_BOT_TOKEN },
       discord: { botToken: process.env.DISCORD_BOT_TOKEN ?? '', enabled: !!process.env.DISCORD_BOT_TOKEN },
+    },
+    exchanges: {
+      binance: { apiKey: process.env.BINANCE_API_KEY ?? '', apiSecret: '', enabled: !!process.env.BINANCE_API_KEY },
+      binance_secret: { apiSecret: process.env.BINANCE_API_SECRET ?? '', enabled: !!process.env.BINANCE_API_SECRET },
+      okx: { apiKey: process.env.OKX_API_KEY ?? '', apiSecret: '', passphrase: '', enabled: !!process.env.OKX_API_KEY },
+      okx_secret: { apiSecret: process.env.OKX_API_SECRET ?? '', enabled: !!process.env.OKX_API_SECRET },
+      okx_passphrase: { passphrase: process.env.OKX_PASSPHRASE ?? '', enabled: !!process.env.OKX_PASSPHRASE },
     },
     budget: {
       dailyLimit: parseFloat(process.env.DAILY_BUDGET_LIMIT ?? '5'),
@@ -88,6 +101,13 @@ function maskSettings(settings: AppSettings) {
       telegram: { ...settings.services.telegram, botToken: maskKey(settings.services.telegram.botToken) },
       discord: { ...settings.services.discord, botToken: maskKey(settings.services.discord.botToken) },
     },
+    exchanges: {
+      binance: { ...settings.exchanges.binance, apiKey: maskKey(settings.exchanges.binance.apiKey) },
+      binance_secret: { ...settings.exchanges.binance_secret, apiSecret: maskKey(settings.exchanges.binance_secret.apiSecret) },
+      okx: { ...settings.exchanges.okx, apiKey: maskKey(settings.exchanges.okx.apiKey) },
+      okx_secret: { ...settings.exchanges.okx_secret, apiSecret: maskKey(settings.exchanges.okx_secret.apiSecret) },
+      okx_passphrase: { ...settings.exchanges.okx_passphrase, passphrase: maskKey(settings.exchanges.okx_passphrase.passphrase) },
+    },
     budget: settings.budget,
     providerMode: settings.providerMode,
     language: settings.language,
@@ -131,6 +151,19 @@ export function setupSettingsRoutes(): Router {
             target[keyField] = data[keyField];
           }
           if (typeof data.enabled === 'boolean') target.enabled = data.enabled;
+        }
+      }
+    }
+
+    // Merge exchanges
+    if (updates.exchanges) {
+      if (!current.exchanges) (current as any).exchanges = getDefaultSettings().exchanges;
+      for (const [ex, data] of Object.entries(updates.exchanges) as [string, any][]) {
+        const target = (current.exchanges as any)[ex];
+        if (!target) continue;
+        for (const [k, v] of Object.entries(data)) {
+          if (typeof v === 'string' && v && !v.includes('••')) (target as any)[k] = v;
+          if (typeof v === 'boolean') (target as any)[k] = v;
         }
       }
     }

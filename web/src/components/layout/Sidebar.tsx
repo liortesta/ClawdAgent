@@ -1,12 +1,13 @@
 import { NavLink } from 'react-router-dom';
 import {
   MessageSquare, ListTodo, Server, Bot, Clock, Settings,
-  LayoutDashboard, Sparkles, DollarSign, ScrollText, Timer, LineChart, Database, Brain, Network
+  LayoutDashboard, Sparkles, DollarSign, ScrollText, Timer, LineChart, Database, Brain, Network, Terminal
 } from 'lucide-react';
 
 const links = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/', icon: MessageSquare, label: 'Chat' },
+  { to: '/openclaw', icon: Terminal, label: 'OpenClaw' },
   { to: '/tasks', icon: ListTodo, label: 'Tasks' },
   { to: '/skills', icon: Sparkles, label: 'Skills' },
   { to: '/servers', icon: Server, label: 'Servers' },

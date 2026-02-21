@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
   ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
-  AI_MODEL: z.string().default('claude-sonnet-4-20250514'),
+  AI_MODEL: z.string().default('claude-sonnet-4-6'),
   AI_MAX_TOKENS: z.coerce.number().default(4096),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_ADMIN_IDS: z.string().optional().transform(v => v?.split(',').map(Number) ?? []),
@@ -16,6 +16,9 @@ const configSchema = z.object({
   DISCORD_ADMIN_IDS: z.string().optional().transform(v => v?.split(',') ?? []),
   WHATSAPP_ENABLED: z.string().default('false').transform(v => v === 'true'),
   WHATSAPP_SESSION_PATH: z.string().default('./data/whatsapp-session'),
+  WHATSAPP_ADMIN_IDS: z.string().optional().transform(v => v?.split(',').map(s => s.trim()).filter(Boolean) ?? []),
+  // Deny-by-default: when 'allowlist', only admin IDs can use each platform (safe default)
+  CHANNEL_SECURITY_MODE: z.enum(['open', 'allowlist']).default('allowlist'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   GITHUB_TOKEN: z.string().optional(),
@@ -28,7 +31,7 @@ const configSchema = z.object({
   OLLAMA_DEFAULT_MODEL: z.string().default('llama3.1'),
   OLLAMA_TOOL_MODEL: z.string().default('qwen3-coder-next'),
   OPENROUTER_API_KEY: z.string().optional(),
-  OPENROUTER_DEFAULT_MODEL: z.string().default('anthropic/claude-sonnet-4'),
+  OPENROUTER_DEFAULT_MODEL: z.string().default('anthropic/claude-sonnet-4.6'),
   OPENROUTER_STRONG_FALLBACK: z.string().default('google/gemini-2.5-flash'),
   OPENROUTER_REASONING_MODEL: z.string().default('deepseek/deepseek-r1-0528:free'),
   OPENROUTER_ECONOMY_MODEL: z.string().default('nvidia/nemotron-nano-9b-v2:free'),
@@ -41,7 +44,8 @@ const configSchema = z.object({
   DESKTOP_MAX_ACTIONS_PER_MINUTE: z.coerce.number().default(60),
   DESKTOP_REQUIRE_CONFIRMATION: z.string().default('true').transform(v => v === 'true'),
   PROJECTS_DIR: z.string().default('./data/projects'),
-  CRON_TIMEZONE: z.string().default('Asia/Jerusalem'),
+  CRON_TIMEZONE: z.string().default('UTC'),
+  BROWSER_LOCALE: z.string().default('en-US'),
   GMAIL_CLIENT_ID: z.string().optional(),
   GMAIL_CLIENT_SECRET: z.string().optional(),
   GMAIL_REFRESH_TOKEN: z.string().optional(),
@@ -52,8 +56,8 @@ const configSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
   GOOGLE_REFRESH_TOKEN: z.string().optional(),
-  DEFAULT_SSH_SERVER: z.string().optional(),  // e.g. "root@37.60.225.76" — all bash commands auto-SSH to this server
-  DEFAULT_SSH_KEY_PATH: z.string().optional(),  // e.g. "C:/Users/lior/.ssh/clawdagent_key" — SSH private key for auto-SSH
+  DEFAULT_SSH_SERVER: z.string().optional(),  // e.g. "root@1.2.3.4" — all bash commands auto-SSH to this server
+  DEFAULT_SSH_KEY_PATH: z.string().optional(),  // e.g. "~/.ssh/clawdagent_key" — SSH private key for auto-SSH
   SSH_ENABLED: z.string().default('false').transform(v => v === 'true'),
   // Multi-server SSH (pipe-separated: id|name|user@host:port|keyPath|workDir|tag1,tag2)
   SSH_SERVER_1: z.string().optional(),
@@ -71,9 +75,9 @@ const configSchema = z.object({
   SERVER_HEALTH_ALERTS: z.string().default('true').transform(v => v === 'true'),
   SERVER_AUTO_SCAN: z.string().default('true').transform(v => v === 'true'),
   SERVER_SCAN_DEPTH: z.coerce.number().default(3),
-  JWT_SECRET: z.string().min(32).default('change-this-to-a-real-secret-at-least-32-chars'),
-  ENCRYPTION_KEY: z.string().min(32).default('change-this-to-a-real-key-at-least-32-chars'),
-  RATE_LIMIT_MAX: z.coerce.number().default(30),
+  JWT_SECRET: z.string().min(32),
+  ENCRYPTION_KEY: z.string().min(32),
+  RATE_LIMIT_MAX: z.coerce.number().default(120),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
   // Model router — smart cost optimization

@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   Activity, Cpu, DollarSign, Clock, Bot, TrendingUp, MessageSquare,
-  Search, Zap, RefreshCw, Server, ArrowRight, Waves,
+  Search, Zap, RefreshCw, Server, ArrowRight, Waves, Flame,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -15,6 +15,8 @@ interface DashboardData {
   costs: any;
   cron: any[];
   activity: any[];
+  heatmap: number[][];
+  kanban: Record<string, any[]>;
 }
 
 // ── Animated Counter Hook ──────────────────────────────────────────
@@ -143,6 +145,169 @@ function ChartTooltip({ active, payload, label, valueKey, prefix }: any) {
   );
 }
 
+// ── Activity Heatmap (GitHub-style) ────────────────────────────────
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const HEAT_COLORS = [
+  'bg-dark-800',                           // 0
+  'bg-emerald-900/60',                     // low
+  'bg-emerald-700/70',                     // medium-low
+  'bg-emerald-500/80',                     // medium
+  'bg-emerald-400',                        // high
+];
+
+function getHeatLevel(value: number, max: number): number {
+  if (value === 0 || max === 0) return 0;
+  const ratio = value / max;
+  if (ratio < 0.15) return 1;
+  if (ratio < 0.4) return 2;
+  if (ratio < 0.7) return 3;
+  return 4;
+}
+
+function ActivityHeatmap({ grid }: { grid: number[][] }) {
+  const max = Math.max(...grid.flat(), 1);
+  const total = grid.flat().reduce((a, b) => a + b, 0);
+  const [tooltip, setTooltip] = useState<{ day: number; hour: number; x: number; y: number } | null>(null);
+
+  return (
+    <div className="card-gradient rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+          <Flame className="w-4 h-4 text-orange-400" /> Activity Heatmap
+        </h2>
+        <span className="text-[10px] text-gray-500 font-mono">{total.toLocaleString()} actions · 4 weeks</span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="min-w-[600px]">
+          {/* Hour labels */}
+          <div className="flex mb-1 ml-10">
+            {Array.from({ length: 24 }, (_, h) => (
+              <div key={h} className="flex-1 text-center text-[9px] text-gray-600 font-mono">
+                {h % 3 === 0 ? `${String(h).padStart(2, '0')}` : ''}
+              </div>
+            ))}
+          </div>
+
+          {/* Grid rows */}
+          {DAYS.map((day, di) => (
+            <div key={day} className="flex items-center gap-1 mb-[3px]">
+              <span className="text-[10px] text-gray-500 w-8 text-right font-mono shrink-0">{day}</span>
+              <div className="flex flex-1 gap-[2px]">
+                {Array.from({ length: 24 }, (_, hi) => {
+                  const val = grid[di]?.[hi] ?? 0;
+                  const level = getHeatLevel(val, max);
+                  return (
+                    <div
+                      key={hi}
+                      className={`flex-1 aspect-square rounded-[3px] ${HEAT_COLORS[level]} transition-colors duration-200 hover:ring-1 hover:ring-white/30 cursor-default`}
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setTooltip({ day: di, hour: hi, x: rect.left + rect.width / 2, y: rect.top });
+                      }}
+                      onMouseLeave={() => setTooltip(null)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center justify-between mt-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-500">Less</span>
+          {HEAT_COLORS.map((c, i) => (
+            <div key={i} className={`w-3 h-3 rounded-[2px] ${c}`} />
+          ))}
+          <span className="text-[10px] text-gray-500">More</span>
+        </div>
+      </div>
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-50 bg-dark-850 border border-gray-700/50 rounded-lg px-3 py-2 shadow-xl pointer-events-none"
+          style={{ left: tooltip.x, top: tooltip.y - 40, transform: 'translateX(-50%)' }}
+        >
+          <p className="text-[11px] text-gray-400">{DAYS[tooltip.day]} {String(tooltip.hour).padStart(2, '0')}:00</p>
+          <p className="text-sm font-semibold text-white">{(grid[tooltip.day]?.[tooltip.hour] ?? 0).toLocaleString()} actions</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Kanban Task Board ─────────────────────────────────────────────
+const KANBAN_COLS: Array<{ key: string; label: string; color: string; dot: string }> = [
+  { key: 'pending', label: 'Pending', color: 'text-amber-400', dot: 'bg-amber-400' },
+  { key: 'in-progress', label: 'In Progress', color: 'text-blue-400', dot: 'bg-blue-400' },
+  { key: 'done', label: 'Done', color: 'text-green-400', dot: 'bg-green-400' },
+];
+
+const PRIORITY_BADGE: Record<string, string> = {
+  p0: 'bg-red-500/20 text-red-400',
+  p1: 'bg-orange-500/20 text-orange-400',
+  p2: 'bg-yellow-500/20 text-yellow-400',
+  p3: 'bg-gray-700 text-gray-400',
+};
+
+function KanbanBoard({ columns }: { columns: Record<string, any[]> }) {
+  return (
+    <div className="card-gradient rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+          <Activity className="w-4 h-4 text-blue-400" /> Task Board
+        </h2>
+        <span className="text-[10px] text-gray-500 font-mono">
+          {Object.values(columns).reduce((s, c) => s + c.length, 0)} tasks
+        </span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        {KANBAN_COLS.map(col => {
+          const items = columns[col.key] ?? [];
+          return (
+            <div key={col.key} className="min-h-[120px]">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className={`w-2 h-2 rounded-full ${col.dot}`} />
+                <span className={`text-xs font-semibold ${col.color}`}>{col.label}</span>
+                <span className="text-[10px] text-gray-600 ml-auto">{items.length}</span>
+              </div>
+              <div className="space-y-1.5">
+                {items.length === 0 ? (
+                  <div className="text-[10px] text-gray-700 text-center py-4">No tasks</div>
+                ) : (
+                  items.slice(0, 5).map((task: any) => (
+                    <div key={task.id} className="bg-dark-800/80 border border-gray-800/50 rounded-lg px-3 py-2 hover:border-gray-700 transition-colors">
+                      <p className="text-xs text-gray-200 truncate">{task.title}</p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        {task.priority && (
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${PRIORITY_BADGE[task.priority] ?? PRIORITY_BADGE.p3}`}>
+                            {task.priority.toUpperCase()}
+                          </span>
+                        )}
+                        {task.tags && Array.isArray(task.tags) && task.tags.slice(0, 2).map((tag: string) => (
+                          <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-dark-900 text-gray-500">{tag}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+                {items.length > 5 && (
+                  <p className="text-[10px] text-gray-600 text-center">+{items.length - 5} more</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Agents data ────────────────────────────────────────────────────
 const AGENTS = [
   { id: 'orchestrator', name: 'Orchestrator', status: 'active', color: 'bg-blue-500' },
@@ -165,13 +330,15 @@ export default function Dashboard() {
   const loadDashboard = async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
     try {
-      const [status, costs, cron, activity] = await Promise.all([
+      const [status, costs, cron, activity, heatmapRes, kanbanRes] = await Promise.all([
         api.dashboardStatus().catch(() => null),
         api.dashboardCosts().catch(() => ({ totalCost: 0, totalCalls: 0, byModel: {} })),
         api.dashboardCron().catch(() => []),
         api.dashboardActivity().catch(() => []),
+        api.dashboardHeatmap().catch(() => ({ grid: Array.from({ length: 7 }, () => Array(24).fill(0)) })),
+        api.dashboardKanban().catch(() => ({ columns: { pending: [], 'in-progress': [], done: [] } })),
       ]);
-      setData({ status, costs, cron, activity });
+      setData({ status, costs, cron, activity, heatmap: heatmapRes.grid, kanban: kanbanRes.columns });
     } catch { /* ignore */ }
     setLoading(false);
     setRefreshing(false);
@@ -334,6 +501,20 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* ── Activity Heatmap ─────────────────────────────────── */}
+        {data?.heatmap && (
+          <div className="mb-6">
+            <ActivityHeatmap grid={data.heatmap} />
+          </div>
+        )}
+
+        {/* ── Kanban Task Board ───────────────────────────────── */}
+        {data?.kanban && (
+          <div className="mb-6">
+            <KanbanBoard columns={data.kanban} />
+          </div>
+        )}
 
         {/* ── Bottom Widgets ──────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">

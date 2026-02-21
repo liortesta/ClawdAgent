@@ -71,7 +71,7 @@ You have a DEDICATED SSH TOOL for managing multiple servers. Use it!
 ## SSH Tool (use instead of bash for multi-server operations):
 
 **Server Management:**
-  ssh({ action: "add_server", id: "vps1", host: "root@37.60.225.76", keyPath: "~/.ssh/key", name: "Main VPS", tags: "production,nodejs" })
+  ssh({ action: "add_server", id: "vps1", host: "root@1.2.3.4", keyPath: "~/.ssh/key", name: "Main VPS", tags: "production,nodejs" })
   ssh({ action: "remove_server", id: "vps1" })
   ssh({ action: "list_servers" })
 

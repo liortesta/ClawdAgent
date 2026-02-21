@@ -30,23 +30,24 @@ export async function startInterfaces(engine: Engine): Promise<BaseInterface[]> 
     }
   }
 
-  if (config.WHATSAPP_ENABLED) {
-    try {
-      const whatsapp = new WhatsAppClient(engine);
-      await whatsapp.start();
-      interfaces.push(whatsapp);
-    } catch (error: any) {
-      logger.error('Failed to start WhatsApp', { error: error.message });
-    }
-  }
-
-  // Web API is always started
+  // Web API is always started FIRST — must not be blocked by WhatsApp/other interfaces
   try {
     const web = new WebServer(engine);
     await web.start();
     interfaces.push(web);
   } catch (error: any) {
     logger.error('Failed to start Web server', { error: error.message });
+  }
+
+  // WhatsApp starts in background — QR code generation can take a while and must not block the server
+  if (config.WHATSAPP_ENABLED) {
+    const whatsapp = new WhatsAppClient(engine);
+    whatsapp.start().then(() => {
+      interfaces.push(whatsapp);
+      logger.info('WhatsApp connected');
+    }).catch((error: any) => {
+      logger.error('Failed to start WhatsApp', { error: error.message });
+    });
   }
 
   logger.info(`Started ${interfaces.length} interfaces`, { names: interfaces.map(i => i.name) });

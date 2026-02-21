@@ -12,7 +12,7 @@ export async function transcribeAudio(audioBuffer: Buffer, format = 'ogg'): Prom
   const formData = new FormData();
   formData.append(
     'file',
-    new Blob([audioBuffer], { type: `audio/${format}` }),
+    new Blob([new Uint8Array(audioBuffer)], { type: `audio/${format}` }),
     `audio.${format}`,
   );
   formData.append('model', 'whisper-1');

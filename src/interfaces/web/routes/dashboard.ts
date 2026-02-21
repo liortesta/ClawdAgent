@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import os from 'os';
+import { sql } from 'drizzle-orm';
 import { getDashboardData, isBridgeReady } from '../../../core/intelligence-bridge.js';
 import { getAllAgents } from '../../../agents/registry.js';
 import { checkOllamaModels, getAgentModelMapping, OLLAMA_MODELS } from '../../../core/ollama-model-registry.js';
+import { getDb } from '../../../memory/database.js';
+import { usageLogs, messages, tasks } from '../../../memory/schema.js';
+import { getApprovalGate } from '../../../core/approval-gate.js';
 import type { Skill } from '../../../core/skills-engine.js';
 import type { ModelOption } from '../../../core/model-router.js';
 
@@ -329,6 +333,106 @@ export function setupDashboardRoutes(deps: {
     res.json({ nodes, links });
   });
 
+  // GET /api/dashboard/kanban — task board grouped by status
+  router.get('/kanban', async (_req, res) => {
+    try {
+      const db = getDb();
+      const allTasks = await db
+        .select()
+        .from(tasks)
+        .orderBy(sql`${tasks.priority} ASC, ${tasks.createdAt} DESC`)
+        .limit(100);
+
+      const columns: Record<string, typeof allTasks> = {
+        pending: [],
+        'in-progress': [],
+        done: [],
+      };
+      for (const t of allTasks) {
+        const col = t.status === 'completed' ? 'done' : t.status === 'in-progress' ? 'in-progress' : 'pending';
+        columns[col].push(t);
+      }
+
+      res.json({ columns, total: allTasks.length });
+    } catch (err: any) {
+      res.json({ columns: { pending: [], 'in-progress': [], done: [] }, total: 0, error: err.message });
+    }
+  });
+
+  // GET /api/dashboard/heatmap — activity heatmap (7 days × 24 hours)
+  router.get('/heatmap', async (_req, res) => {
+    try {
+      const db = getDb();
+      // Query usage_logs grouped by day-of-week (0=Sun) and hour, last 4 weeks
+      const rows: Array<{ dow: number; hour: number; count: number }> = await db
+        .select({
+          dow: sql<number>`EXTRACT(DOW FROM ${usageLogs.createdAt})`.as('dow'),
+          hour: sql<number>`EXTRACT(HOUR FROM ${usageLogs.createdAt})`.as('hour'),
+          count: sql<number>`COUNT(*)`.as('count'),
+        })
+        .from(usageLogs)
+        .where(sql`${usageLogs.createdAt} >= NOW() - INTERVAL '4 weeks'`)
+        .groupBy(
+          sql`EXTRACT(DOW FROM ${usageLogs.createdAt})`,
+          sql`EXTRACT(HOUR FROM ${usageLogs.createdAt})`,
+        );
+
+      // Build a 7×24 grid (default 0)
+      const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
+      for (const r of rows) {
+        grid[Number(r.dow)][Number(r.hour)] = Number(r.count);
+      }
+
+      // If usage_logs is empty, fall back to messages table
+      const total = rows.reduce((s, r) => s + Number(r.count), 0);
+      if (total === 0) {
+        const msgRows: Array<{ dow: number; hour: number; count: number }> = await db
+          .select({
+            dow: sql<number>`EXTRACT(DOW FROM ${messages.createdAt})`.as('dow'),
+            hour: sql<number>`EXTRACT(HOUR FROM ${messages.createdAt})`.as('hour'),
+            count: sql<number>`COUNT(*)`.as('count'),
+          })
+          .from(messages)
+          .where(sql`${messages.createdAt} >= NOW() - INTERVAL '4 weeks'`)
+          .groupBy(
+            sql`EXTRACT(DOW FROM ${messages.createdAt})`,
+            sql`EXTRACT(HOUR FROM ${messages.createdAt})`,
+          );
+        for (const r of msgRows) {
+          grid[Number(r.dow)][Number(r.hour)] = Number(r.count);
+        }
+      }
+
+      res.json({ grid, period: '4 weeks' });
+    } catch (err: any) {
+      // Return empty grid on error (e.g. DB not ready)
+      res.json({ grid: Array.from({ length: 7 }, () => Array(24).fill(0)), period: '4 weeks', error: err.message });
+    }
+  });
+
+  // ── Approval Gate endpoints ────────────────────────────────────────
+  router.get('/approvals', (_req, res) => {
+    const gate = getApprovalGate();
+    res.json({ pending: gate.getPending(), stats: gate.getStats() });
+  });
+
+  router.get('/approvals/history', (_req, res) => {
+    const gate = getApprovalGate();
+    res.json(gate.getHistory());
+  });
+
+  router.post('/approvals/:id/approve', (req, res) => {
+    const gate = getApprovalGate();
+    const ok = gate.approve(req.params.id, 'web-admin');
+    res.json({ ok, id: req.params.id, action: 'approved' });
+  });
+
+  router.post('/approvals/:id/deny', (req, res) => {
+    const gate = getApprovalGate();
+    const ok = gate.deny(req.params.id, 'web-admin');
+    res.json({ ok, id: req.params.id, action: 'denied' });
+  });
+
   router.get('/containers', async (_req, res) => {
     try {
       const { exec } = await import('child_process');
@@ -341,6 +445,26 @@ export function setupDashboardRoutes(deps: {
       });
       res.json(containers);
     } catch { res.json([]); }
+  });
+
+  // GET /api/dashboard/promoter — auto-promoter stats
+  router.get('/promoter', async (_req, res) => {
+    try {
+      const { getPromotionStats } = await import('../../../core/auto-promoter.js');
+      res.json(getPromotionStats());
+    } catch { res.json({ error: 'Promoter not initialized' }); }
+  });
+
+  // POST /api/dashboard/promoter/run — manually trigger promotion cycle
+  router.post('/promoter/run', async (_req, res) => {
+    try {
+      const { runPromotionCycle } = await import('../../../core/auto-promoter.js');
+      const result = await runPromotionCycle();
+      pushActivity('promotion', result.split('\n')[0]);
+      res.json({ success: true, result });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   return router;

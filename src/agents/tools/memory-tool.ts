@@ -1,5 +1,6 @@
 import { BaseTool, ToolResult } from './base-tool.js';
 import { learnFact, getUserKnowledge, searchKnowledge, getKnowledgeByCategory, getKnowledgeCount } from '../../memory/repositories/knowledge.js';
+import { hybridSearch, formatSearchResults } from '../../memory/repositories/hybrid-search.js';
 import { getDb } from '../../memory/database.js';
 import { knowledge } from '../../memory/schema.js';
 import { eq, and } from 'drizzle-orm';
@@ -36,9 +37,14 @@ export class MemoryTool extends BaseTool {
       case 'recall': {
         const category = input.category ? String(input.category) : undefined;
         const search = input.search ? String(input.search) : undefined;
+        const hybrid = input.hybrid !== false; // default to hybrid
 
         let result: string;
-        if (search) {
+        if (search && hybrid) {
+          // Hybrid search: keyword + full-text across knowledge + memory_entries
+          const results = await hybridSearch(search, { userId, limit: 15 });
+          result = formatSearchResults(results);
+        } else if (search) {
           result = await searchKnowledge(userId, search);
         } else if (category) {
           result = await getKnowledgeByCategory(userId, category);

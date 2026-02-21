@@ -1,10 +1,17 @@
 import { Queue } from 'bullmq';
 import config from '../config.js';
 import logger from '../utils/logger.js';
+import { isCacheAvailable } from '../memory/cache.js';
 
 const connection = { url: config.REDIS_URL };
 
-export function startScheduler() {
+export function startScheduler(): Queue | null {
+  // BullMQ requires Redis — skip gracefully if not available
+  if (!isCacheAvailable()) {
+    logger.warn('Job scheduler skipped — Redis not available');
+    return null;
+  }
+
   const queue = new Queue('clawdagent', { connection });
 
   // Health checks every 5 minutes

@@ -7,7 +7,7 @@ import {
   MessageSquare, WifiOff, Wifi, X, AlertCircle,
   Brain, ChevronDown, ChevronUp, Plus, PanelLeftClose, PanelLeft, MoreVertical,
   Paperclip, FileText, Image as ImageIcon, File as FileIcon,
-  Languages, Sparkles, Palette, Cpu, Wrench, Zap,
+  Languages, Sparkles, Palette, Cpu, Wrench, Zap, QrCode,
 } from 'lucide-react';
 
 const RESPONSE_MODES = [
@@ -223,6 +223,10 @@ export default function Chat() {
   const [modelList, setModelList] = useState<Array<{ id: string; name: string; provider: string; tier: string; supportsHebrew?: boolean; supportsVision?: boolean }>>([
     { id: 'auto', name: 'Auto', provider: 'auto', tier: 'auto' },
   ]);
+  const [streamingText, setStreamingText] = useState('');
+  const [showWhatsAppQR, setShowWhatsAppQR] = useState(false);
+  const [whatsappQR, setWhatsappQR] = useState<{ qrDataUrl: string | null; status: string } | null>(null);
+  const [whatsappLoading, setWhatsappLoading] = useState(false);
 
   const {
     conversations, activeConversationId, isLoading, loadingConversationId,
@@ -260,10 +264,12 @@ export default function Chat() {
       if (connected) setWsError(null);
     });
 
-    ws.on('message', (data: { text: string; thinking?: string; agent?: string; tokens?: number; provider?: string; elapsed?: number }) => {
-      const targetConv = pendingConvRef.current;
+    ws.on('message', (data: { text: string; thinking?: string; agent?: string; tokens?: number; provider?: string; elapsed?: number; conversationId?: string }) => {
+      // Use conversationId from response (for recovered messages) or from pending ref
+      const targetConv = data.conversationId || pendingConvRef.current;
       pendingConvRef.current = null;
       setProgressLog([]);
+      setStreamingText('');
       if (targetConv) {
         addMessageTo(targetConv, {
           role: 'assistant',
@@ -296,7 +302,21 @@ export default function Chat() {
     ws.on('cancelled', () => {
       pendingConvRef.current = null;
       setProgressLog([]);
+      setStreamingText('');
       setConversationLoading(null);
+    });
+
+    // ── Streaming text events ──
+    ws.on('stream_start', () => {
+      setStreamingText('');
+    });
+
+    ws.on('text_chunk', (data: { text: string }) => {
+      setStreamingText(prev => prev + data.text);
+    });
+
+    ws.on('stream_reset', () => {
+      setStreamingText('');
     });
 
     ws.connect(token);
@@ -310,7 +330,7 @@ export default function Chat() {
   // ── Auto-scroll on new messages ──────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, streamingText]);
 
   // ── Focus search input when toggled ──────────────────────────────
   useEffect(() => {
@@ -678,6 +698,25 @@ export default function Chat() {
               <Trash2 className="w-4 h-4" />
             </button>
 
+            {/* WhatsApp QR */}
+            <button
+              onClick={async () => {
+                setShowWhatsAppQR(true);
+                setWhatsappLoading(true);
+                try {
+                  const data = await api.whatsappQR();
+                  setWhatsappQR({ qrDataUrl: data.qrDataUrl, status: data.status });
+                } catch {
+                  setWhatsappQR({ qrDataUrl: null, status: 'error' });
+                }
+                setWhatsappLoading(false);
+              }}
+              className="p-2 text-gray-400 hover:text-green-400 hover:bg-dark-800 rounded-lg transition-colors"
+              title="WhatsApp QR"
+            >
+              <QrCode className="w-4 h-4" />
+            </button>
+
             {/* Divider */}
             <div className="w-px h-5 bg-gray-700 mx-0.5" />
 
@@ -879,6 +918,20 @@ export default function Chat() {
             );
           })}
 
+          {/* Streaming text — token-by-token display */}
+          {isLoading && streamingText && (
+            <div className="flex justify-start">
+              <div className="flex items-end gap-2 max-w-[80%] md:max-w-2xl">
+                <div className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center bg-dark-800 border border-gray-700">
+                  <Bot className="w-3.5 h-3.5 text-primary-400" />
+                </div>
+                <div dir={detectDir(streamingText) || undefined} className="bg-dark-800 text-gray-100 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed break-words">{streamingText}<span className="inline-block w-1.5 h-4 bg-primary-400 animate-pulse ml-0.5 align-text-bottom" /></p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Live progress — narrative story view */}
           {isLoading && (() => {
             // Filter: skip "Still working..." / "Working..." keepalive spam, keep real events
@@ -966,6 +1019,62 @@ export default function Chat() {
 
           <div ref={bottomRef} />
         </div>
+
+        {/* ── WhatsApp QR Popup ──────────────────────────────── */}
+        {showWhatsAppQR && (
+          <div className="absolute inset-0 z-40 bg-black/60 flex items-center justify-center backdrop-blur-sm" onClick={() => setShowWhatsAppQR(false)}>
+            <div className="bg-dark-800 border border-gray-700 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <QrCode className="w-5 h-5 text-green-400" />
+                  <h3 className="font-semibold text-white">WhatsApp QR</h3>
+                </div>
+                <button onClick={() => setShowWhatsAppQR(false)} className="text-gray-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              {whatsappLoading ? (
+                <div className="flex flex-col items-center py-8">
+                  <Loader2 className="w-8 h-8 text-green-400 animate-spin mb-3" />
+                  <p className="text-sm text-gray-400">Loading QR code...</p>
+                </div>
+              ) : whatsappQR?.status === 'authenticated' ? (
+                <div className="text-center py-6">
+                  <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-3">
+                    <Wifi className="w-6 h-6 text-green-400" />
+                  </div>
+                  <p className="text-green-400 font-medium">WhatsApp Connected</p>
+                  <p className="text-xs text-gray-500 mt-1">Already authenticated</p>
+                </div>
+              ) : whatsappQR?.qrDataUrl ? (
+                <div className="text-center">
+                  <img src={whatsappQR.qrDataUrl} alt="WhatsApp QR Code" className="mx-auto rounded-lg border border-gray-700 max-w-[250px]" />
+                  <p className="text-xs text-gray-400 mt-3">Scan with WhatsApp to connect</p>
+                  <button
+                    onClick={async () => {
+                      setWhatsappLoading(true);
+                      try {
+                        const data = await api.whatsappQR();
+                        setWhatsappQR({ qrDataUrl: data.qrDataUrl, status: data.status });
+                      } catch { /* ignore */ }
+                      setWhatsappLoading(false);
+                    }}
+                    className="mt-3 px-4 py-2 bg-dark-900 border border-gray-700 rounded-lg text-xs text-gray-300 hover:bg-dark-800 transition-colors"
+                  >
+                    Refresh QR
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-gray-400 text-sm">
+                    {whatsappQR?.status === 'error' ? 'Failed to load QR code' : 'No QR code available'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">WhatsApp may not be enabled</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Drag & Drop Overlay ────────────────────────────── */}
         {isDragging && (

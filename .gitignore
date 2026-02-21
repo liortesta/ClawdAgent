@@ -43,9 +43,9 @@ coverage/
 drizzle/meta/
 
 # Temp
+tmp/
 *.tmp
 *.bak
-*.zip
 nul
 
 # Secrets
@@ -53,7 +53,32 @@ nul
 *.key
 credentials.json
 
-# Claude Code
+# Claude Code local settings
+.claude/settings.local.json
+
+# Claude Code reports
 docs/quality-reports/*.md
 docs/evolution-reports/*.md
 docs/scout-reports/*.md
+
+# Separate projects (not part of core)
+tiktok-app/
+molttik/
+ai-quote-generator/
+
+# Screenshots and media
+*.png
+*.jpg
+*.jpeg
+*.docx
+*.zip
+
+# Playwright MCP
+.playwright-mcp/
+
+# Local helper files
+.lh/
+tsc-*.txt
+
+# Uploads
+uploads/

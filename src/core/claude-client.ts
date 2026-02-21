@@ -48,7 +48,7 @@ export class ClaudeClient {
           temperature: request.temperature ?? 0.7,
           system: request.systemPrompt,
           messages: request.messages,
-          ...(request.tools?.length ? { tools: request.tools } : {}),
+          ...(request.tools?.length ? { tools: request.tools as any } : {}),
         });
 
         this.totalTokensUsed.input += response.usage.input_tokens;

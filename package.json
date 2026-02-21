@@ -1,12 +1,42 @@
 {
   "name": "clawdagent",
-  "version": "5.0.0",
-  "description": "Autonomous AI octopus agent — thinks, learns, self-improves, never stops",
+  "version": "6.0.0",
+  "description": "Autonomous AI agent system — 18 agents, 29 tools, 74 skills. Self-evolving, multi-platform, multi-model.",
   "type": "module",
+  "license": "MIT",
+  "author": "Lior Ben Shimon",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liorbs/clawdagent.git"
+  },
+  "homepage": "https://github.com/liorbs/clawdagent#readme",
+  "bugs": {
+    "url": "https://github.com/liorbs/clawdagent/issues"
+  },
+  "keywords": [
+    "ai-agent",
+    "autonomous",
+    "multi-agent",
+    "typescript",
+    "anthropic",
+    "claude",
+    "openrouter",
+    "mcp",
+    "a2a",
+    "acp",
+    "self-evolving",
+    "tools",
+    "telegram-bot",
+    "discord-bot"
+  ],
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js",
+    "start": "node --max-old-space-size=8192 dist/index.js",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "eslint src/",
@@ -16,7 +46,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.74.0",
+    "@anthropic-ai/sdk": "^0.78.0",
     "@grammyjs/conversations": "^2.1.1",
     "@types/multer": "^2.0.0",
     "@types/qrcode": "^1.5.6",

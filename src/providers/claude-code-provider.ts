@@ -140,7 +140,25 @@ export class ClaudeCodeProvider {
       logger.info('Claude Code CLI found', { version: version.trim() });
       this.available = true;
 
-      // Auth check — use direct node.exe path to avoid cmd.exe issues
+      // Auth check — try `claude auth status` first (cleaner, faster), fall back to test prompt
+      try {
+        const { stdout: authStatus } = await spawnClaude(
+          this.cliPath,
+          ['auth', 'status', '--output-format', 'json'],
+          { timeout: 30000, cliEntryPoint: this.cliEntryPoint ?? undefined },
+        );
+        const statusParsed = JSON.parse(authStatus);
+        if (statusParsed.authenticated || statusParsed.status === 'authenticated' || statusParsed.account) {
+          this.authenticated = true;
+          this.lastCheckAt = Date.now();
+          logger.info('Claude Code CLI authenticated via auth status', { account: statusParsed.account ?? statusParsed.email ?? 'unknown' });
+          return true;
+        }
+      } catch {
+        // auth status not supported in older CLI versions — fall back to test prompt
+        logger.info('Claude Code auth status not available, falling back to test prompt');
+      }
+
       const { stdout: authCheck } = await spawnClaude(
         this.cliPath,
         ['-p', 'respond with just OK', '--output-format', 'json'],
@@ -151,7 +169,7 @@ export class ClaudeCodeProvider {
       if (parsed.result || parsed.content || parsed.type === 'result') {
         this.authenticated = true;
         this.lastCheckAt = Date.now();
-        logger.info('Claude Code CLI authenticated');
+        logger.info('Claude Code CLI authenticated via test prompt');
         return true;
       }
 
@@ -232,7 +250,7 @@ RULES:
 
     try {
       const { stdout, stderr } = await spawnClaude(this.cliPath, args, {
-        timeout: 30000,
+        timeout: 120000,
         maxBuffer: 1024 * 1024 * 10,
         cliEntryPoint: this.cliEntryPoint ?? undefined,
         stdinData: usePipe ? userPrompt : undefined,
@@ -246,7 +264,7 @@ RULES:
         throw new Error('Claude Code CLI: authentication expired. Run "claude login" to re-authenticate.');
       }
       if (err.message.includes('TIMEOUT') || err.message.includes('killed')) {
-        throw new Error('Claude Code CLI: request timed out (120s)');
+        throw new Error('Claude Code CLI: request timed out (120s). Retrying may help.');
       }
       throw new Error(`Claude Code CLI error: ${err.message}`);
     } finally {

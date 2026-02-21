@@ -9,11 +9,14 @@ export class WsClient {
   private token: string | null = null;
   private intentionalClose = false;
   private authenticated = false;
+  private reconnectAttempts = 0;
+  private maxReconnectDelay = 30000; // 30 seconds max
 
   connect(token: string) {
     this.token = token;
     this.intentionalClose = false;
     this.authenticated = false;
+    this.reconnectAttempts = 0;
     this.doConnect();
   }
 
@@ -40,7 +43,14 @@ export class WsClient {
         // Handle auth response
         if (type === 'auth' && data?.ok) {
           this.authenticated = true;
+          this.reconnectAttempts = 0; // Reset backoff on successful auth
           this.statusHandlers.forEach(h => h(true));
+          return;
+        }
+
+        // Handle recovered messages (responses computed while disconnected)
+        if (type === 'recovered_message') {
+          this.handlers.get('message')?.forEach(h => h(data));
           return;
         }
 
@@ -63,7 +73,10 @@ export class WsClient {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => this.doConnect(), 3000);
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (capped)
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay);
+    this.reconnectAttempts++;
+    this.reconnectTimer = setTimeout(() => this.doConnect(), delay);
   }
 
   on(type: string, handler: MessageHandler) {
@@ -92,6 +105,7 @@ export class WsClient {
   disconnect() {
     this.intentionalClose = true;
     this.authenticated = false;
+    this.reconnectAttempts = 0;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws?.close();
     this.ws = null;

@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import config from '../../config.js';
 import logger from '../../utils/logger.js';
-import { getTemplate, listTemplates, ProjectTemplate } from './templates.js';
+import { getTemplate, listTemplates } from './templates.js';
 import { DockerManager } from './docker-manager.js';
 
 const execAsync = promisify(exec);

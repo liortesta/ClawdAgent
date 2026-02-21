@@ -1,5 +1,4 @@
 import config from '../../config.js';
-import logger from '../../utils/logger.js';
 import { withRetry } from '../../utils/retry.js';
 
 export interface SearchResult {
@@ -18,7 +17,7 @@ export async function braveSearch(query: string, count = 5): Promise<SearchResul
 
     if (!response.ok) throw new Error(`Brave Search error: ${response.status}`);
 
-    const data = await response.json();
+    const data: any = await response.json();
     return (data.web?.results ?? []).map((r: any) => ({
       title: r.title, url: r.url, description: r.description,
     }));

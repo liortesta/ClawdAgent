@@ -76,9 +76,13 @@ const BLOCKED_PATTERNS = [
   /prototype\s*\[/,
 ];
 
+/** Rate limit: max tool creations per hour to prevent runaway generation */
+const MAX_CREATIONS_PER_HOUR = 5;
+
 export class ToolCreator {
   private ai: AIClient;
   private tools = new Map<string, DynamicTool>();
+  private creationTimestamps: number[] = [];
 
   constructor(ai: AIClient) {
     this.ai = ai;
@@ -86,6 +90,18 @@ export class ToolCreator {
 
   /** Create a new tool from natural language description */
   async createTool(description: string): Promise<{ success: boolean; name?: string; error?: string }> {
+    // Opt-in only — dynamic tool creation must be explicitly enabled
+    if (process.env.DYNAMIC_TOOLS_ENABLED !== 'true') {
+      return { success: false, error: 'Dynamic tool creation is disabled. Set DYNAMIC_TOOLS_ENABLED=true to enable.' };
+    }
+
+    // Rate limit: prevent runaway tool creation (emergent behavior ceiling)
+    const oneHourAgo = Date.now() - 3600_000;
+    this.creationTimestamps = this.creationTimestamps.filter(t => t > oneHourAgo);
+    if (this.creationTimestamps.length >= MAX_CREATIONS_PER_HOUR) {
+      return { success: false, error: `Rate limited: max ${MAX_CREATIONS_PER_HOUR} tool creations per hour` };
+    }
+    this.creationTimestamps.push(Date.now());
     try {
       // 1. AI generates tool spec
       const specResponse = await this.ai.chat({

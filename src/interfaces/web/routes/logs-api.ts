@@ -84,7 +84,7 @@ export function setupLogsRoutes(): Router {
 
   // GET /api/logs/file/:filename — read specific log file
   router.get('/file/:filename', (req: Request, res: Response) => {
-    const filePath = join(LOGS_DIR, req.params.filename);
+    const filePath = join(LOGS_DIR, String(req.params.filename));
 
     // Prevent path traversal
     if (!filePath.startsWith(LOGS_DIR)) {

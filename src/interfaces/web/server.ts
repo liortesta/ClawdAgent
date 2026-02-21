@@ -25,8 +25,13 @@ import { setupHistoryRoutes } from './routes/history-api.js';
 import { setupWhatsAppQRRoutes } from './routes/whatsapp-qr.js';
 import { setupTradingRoutes } from './routes/trading-api.js';
 import { setupRAGRoutes } from './routes/rag-api.js';
+import { setupCLIRoutes } from './routes/cli-api.js';
+import { setupOpenClawRoutes } from './routes/openclaw-api.js';
+import { setupA2ARoutes, setupACPRoutes, setupAgentCardRoute } from './routes/a2a-api.js';
 import { getAllModels } from '../../core/model-router.js';
 import { resolve as resolvePath } from 'path';
+import { metricsMiddleware, renderMetrics } from '../../core/metrics.js';
+import { getAllCircuitBreakerStats } from '../../core/circuit-breaker.js';
 
 export class WebServer extends BaseInterface {
   name = 'Web';
@@ -50,8 +55,8 @@ export class WebServer extends BaseInterface {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],  // unsafe-inline kept for styles only (dynamic CSS-in-JS)
           imgSrc: ["'self'", 'data:', 'blob:'],
           connectSrc: ["'self'", 'ws:', 'wss:'],
           fontSrc: ["'self'"],
@@ -81,6 +86,7 @@ export class WebServer extends BaseInterface {
 
     this.app.use(express.json({ limit: '1mb' }));
     this.app.use(rateLimitMiddleware);
+    this.app.use(metricsMiddleware);
 
     // Global error handler for malformed JSON (entity.parse.failed)
     this.app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -94,6 +100,30 @@ export class WebServer extends BaseInterface {
   }
 
   private setupRoutes() {
+    // Prometheus metrics endpoint (no auth — standard for scraping)
+    this.app.get('/metrics', (_req, res) => {
+      res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+      res.send(renderMetrics());
+    });
+
+    // Circuit breaker stats (authenticated)
+    this.app.get('/api/circuit-breakers', authMiddleware, (_req, res) => {
+      res.json(getAllCircuitBreakerStats());
+    });
+
+    // Request timeout middleware — 120s for all API routes
+    this.app.use('/api', (req, res, next) => {
+      const timeout = setTimeout(() => {
+        if (!res.headersSent) {
+          logger.warn('Request timeout', { method: req.method, path: req.path });
+          res.status(504).json({ error: 'Request timeout — processing took too long' });
+        }
+      }, 120_000);
+      res.on('finish', () => clearTimeout(timeout));
+      res.on('close', () => clearTimeout(timeout));
+      next();
+    });
+
     // Webhook routes — authenticated via OPENCLAW_GATEWAY_TOKEN in webhook handler
     this.app.use('/webhook', setupWebhookRoutes());
     this.app.use('/api/auth', setupAuthRoutes());
@@ -108,7 +138,12 @@ export class WebServer extends BaseInterface {
       getModels: () => getAllModels(),
       getProviders: () => this.engine.getAIClient().getAvailableProviders(),
       getMcpServers: () => this.loadMcpServerList(),
-      getSSHServers: () => [],
+      getSSHServers: () => {
+        try {
+          const { getServerListForAgent } = require('./routes/servers-api.js');
+          return getServerListForAgent();
+        } catch { return []; }
+      },
     }));
     // Specific API routes (all require auth) — register before the catch-all
     this.app.use('/api/settings', authMiddleware, setupSettingsRoutes());
@@ -120,10 +155,25 @@ export class WebServer extends BaseInterface {
     this.app.use('/api/history', authMiddleware, setupHistoryRoutes());
     this.app.use('/api/whatsapp', authMiddleware, setupWhatsAppQRRoutes());
     this.app.use('/api/trading', authMiddleware, setupTradingRoutes());
-    // RAG routes (requires RAG engine — initialized later via setRAGEngine)
-    if (this.engine.getRAGEngine()) {
-      this.app.use('/api/rag', authMiddleware, setupRAGRoutes(this.engine.getRAGEngine()!));
-    }
+    this.app.use('/api/cli', authMiddleware, setupCLIRoutes(this.engine));
+    this.app.use('/api/openclaw', authMiddleware, setupOpenClawRoutes());
+    // RAG routes — lazy proxy so routes work even when RAGEngine is set after server start
+    this.app.use('/api/rag', authMiddleware, (req, res, next) => {
+      const rag = this.engine.getRAGEngine();
+      if (!rag) { res.status(503).json({ error: 'Knowledge base is initializing, please try again shortly' }); return; }
+      if (!(this as any)._ragRouter) (this as any)._ragRouter = setupRAGRoutes(rag);
+      (this as any)._ragRouter(req, res, next);
+    });
+
+    // ── Protocol Endpoints (A2A + ACP) ─────────────────────────────────────
+    // Agent Card — public (no auth), per A2A spec: GET /.well-known/agent.json
+    this.app.use('/.well-known', setupAgentCardRoute(this.engine));
+    // A2A Protocol — JSON-RPC 2.0 + REST + SSE (auth required)
+    this.app.use('/a2a', authMiddleware, setupA2ARoutes(this.engine));
+    // ACP Protocol — REST agent messaging (auth required)
+    this.app.use('/acp', authMiddleware, setupACPRoutes(this.engine));
+    logger.info('A2A + ACP protocol endpoints registered');
+
     // Catch-all /api route (chat + status) — MUST be after specific routes
     this.app.use('/api', authMiddleware, setupApiRoutes(this.engine));
     // Serve legacy dashboard HTML

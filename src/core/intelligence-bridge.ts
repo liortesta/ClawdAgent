@@ -16,6 +16,7 @@ import type { ObservabilityLayer } from './observability.js';
 import type { AutonomousGoalEngine } from './autonomous-goals.js';
 import type { SafetySimulator } from './safety-simulator.js';
 import type { FeedbackLoop } from './feedback-loop.js';
+import { recordCostForPanic, recordFailureForPanic } from './kill-switch.js';
 import logger from '../utils/logger.js';
 
 /** Result of a pre-execution safety check */
@@ -91,7 +92,7 @@ export function onToolExecuted(params: {
       params.latency,
     );
 
-    // 3. Cost Intelligence — per-workflow cost tracking
+    // 3. Cost Intelligence — per-workflow cost tracking + kill-switch wiring
     if (params.cost > 0 || params.inputTokens) {
       costIntel?.logCost({
         workflowType: params.workflowType ?? params.intent,
@@ -104,10 +105,16 @@ export function onToolExecuted(params: {
         success: params.success,
         timestamp: Date.now(),
       });
+
+      // Feed cost to kill-switch auto-panic (triggers if cost > 2x daily budget)
+      if (params.cost > 0) {
+        recordCostForPanic(params.cost);
+      }
     }
 
-    // 4. Memory — record failure for clustering
+    // 4. Memory — record failure for clustering + kill-switch wiring
     if (!params.success) {
+      recordFailureForPanic(); // Feed failure to auto-panic (10+ failures/hour = panic)
       memory?.recordFailure(
         `tool_${params.toolId}_failure`,
         `Tool ${params.toolId} failed during ${params.intent}`,

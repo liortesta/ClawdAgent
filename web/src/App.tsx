@@ -17,6 +17,7 @@ import Trading from './pages/Trading';
 import Knowledge from './pages/Knowledge';
 import Intelligence from './pages/Intelligence';
 import Graph from './pages/Graph';
+import OpenClaw from './pages/OpenClaw';
 import { useAuthStore } from './stores/auth';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route index element={<Chat />} />
+          <Route path="openclaw" element={<OpenClaw />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="skills" element={<Skills />} />

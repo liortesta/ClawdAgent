@@ -44,7 +44,7 @@ export class SSHClient {
   }
 
   async disconnectAll() {
-    for (const [name, ssh] of this.connections) { ssh.dispose(); }
+    for (const [, ssh] of this.connections) { ssh.dispose(); }
     this.connections.clear();
   }
 }

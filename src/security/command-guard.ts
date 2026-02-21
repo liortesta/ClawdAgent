@@ -14,6 +14,18 @@ const BLOCKED_COMMANDS = [
   /wget.*\|\s*(bash|sh)/i,
   />\s*\/etc\//i,
   /git\s+push\s+--force\s+(origin\s+)?(main|master)/i,
+  // Encoded/obfuscated command execution — blocks base64 decode piped to shell,
+  // eval of encoded strings, python/perl -e with shell calls, etc.
+  /base64\s+-d\s*\|\s*(bash|sh|zsh)/i,
+  /\|\s*base64\s+-d\s*\|\s*(bash|sh)/i,
+  /eval\s*\$\(.*base64/i,
+  /python[23]?\s+-c\s+.*import\s+os/i,
+  /perl\s+-e\s+.*system\s*\(/i,
+  /\|\s*(bash|sh|zsh)\s*$/i,         // anything piped to shell at end of command
+  /xargs\s+.*rm\b/i,                  // xargs rm (bulk delete bypass)
+  /find\s+\/\s+-.*-delete/i,          // find / -delete (recursive root delete)
+  />\s*\/dev\/[sh]d[a-z]/i,           // write to disk devices
+  /shutdown|reboot|halt|poweroff/i,   // system power commands
 ];
 
 const CAUTION_COMMANDS = [

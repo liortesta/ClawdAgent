@@ -176,7 +176,7 @@ export class RapidApiTool extends BaseTool {
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data: any = await res.json();
         const apis = Array.isArray(data) ? data : data.apis || data.results || [];
         if (apis.length > 0) {
           marketplaceResults = '\n\n--- Marketplace Results ---\n' +

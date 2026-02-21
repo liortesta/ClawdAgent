@@ -64,7 +64,7 @@ export class SSHSessionManager {
    */
   loadServersFromEnv(): void {
     // Legacy default server
-    const legacyServer = config.DEFAULT_SSH_SERVER;   // e.g. "root@37.60.225.76"
+    const legacyServer = config.DEFAULT_SSH_SERVER;   // e.g. "root@1.2.3.4"
     const legacyKey = config.DEFAULT_SSH_KEY_PATH;
 
     if (legacyServer && legacyKey) {
@@ -416,7 +416,7 @@ export class SSHSessionManager {
   }
 
   /**
-   * Parse the legacy DEFAULT_SSH_SERVER value (e.g. "root@37.60.225.76") combined
+   * Parse the legacy DEFAULT_SSH_SERVER value (e.g. "root@1.2.3.4") combined
    * with DEFAULT_SSH_KEY_PATH into an SSHServer with id "default".
    */
   private parseLegacyServer(serverStr: string, keyPath: string): SSHServer {

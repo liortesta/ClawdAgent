@@ -135,6 +135,8 @@ export class GoalEngine {
     if (step.attempts >= step.maxAttempts) {
       step.status = 'failed';
       goal.strategyHistory.push(`Step "${step.description}" failed after ${step.attempts} attempts: ${error}`);
+      // Ceiling: prevent unbounded strategy history growth
+      if (goal.strategyHistory.length > 20) goal.strategyHistory.shift();
       goal.status = 'blocked';
       return 'replan';
     }

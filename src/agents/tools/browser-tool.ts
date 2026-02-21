@@ -1,4 +1,39 @@
 import { BaseTool, ToolResult } from './base-tool.js';
+import config from '../../config.js';
+
+/** Block SSRF — deny navigation to internal/private networks and dangerous protocols */
+function isUrlSafe(rawUrl: string): { safe: boolean; reason?: string } {
+  try {
+    const u = new URL(rawUrl);
+
+    // Block dangerous protocols
+    if (!['http:', 'https:'].includes(u.protocol)) {
+      return { safe: false, reason: `Blocked protocol: ${u.protocol}` };
+    }
+
+    // Block metadata endpoints, localhost, and private IPs
+    const host = u.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') {
+      return { safe: false, reason: 'Blocked: localhost' };
+    }
+    if (host === '169.254.169.254' || host === 'metadata.google.internal') {
+      return { safe: false, reason: 'Blocked: cloud metadata endpoint' };
+    }
+
+    // Block RFC-1918 private ranges
+    const parts = host.split('.').map(Number);
+    if (parts.length === 4 && parts.every(n => !isNaN(n))) {
+      if (parts[0] === 10) return { safe: false, reason: 'Blocked: private IP (10.x.x.x)' };
+      if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return { safe: false, reason: 'Blocked: private IP (172.16-31.x.x)' };
+      if (parts[0] === 192 && parts[1] === 168) return { safe: false, reason: 'Blocked: private IP (192.168.x.x)' };
+      if (parts[0] === 169 && parts[1] === 254) return { safe: false, reason: 'Blocked: link-local IP' };
+    }
+
+    return { safe: true };
+  } catch {
+    return { safe: false, reason: 'Invalid URL' };
+  }
+}
 
 let playwright: any = null;
 
@@ -44,8 +79,8 @@ export class BrowserTool extends BaseTool {
         this.context = await this.browser.newContext({
           viewport: { width: 1280, height: 720 },
           userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          locale: 'he-IL',
-          timezoneId: 'Asia/Jerusalem',
+          locale: config.BROWSER_LOCALE ?? 'en-US',
+          timezoneId: config.CRON_TIMEZONE ?? 'UTC',
         });
         this.page = await this.context.newPage();
         this.log('Browser launched');
@@ -56,6 +91,8 @@ export class BrowserTool extends BaseTool {
       switch (action) {
         case 'navigate': {
           if (!url) return { success: false, output: '', error: 'URL required' };
+          const urlCheck = isUrlSafe(url);
+          if (!urlCheck.safe) return { success: false, output: '', error: `SSRF blocked: ${urlCheck.reason}` };
           await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
           const title = await this.page.title();
           const bodyText = await this.page.innerText('body').catch(() => '');

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { timingSafeEqual } from 'crypto';
 import logger from '../../../utils/logger.js';
 import config from '../../../config.js';
 
@@ -119,18 +120,29 @@ function getEventLabel(type: string): string {
 
 // ─── Webhook Authentication ─────────────────────────────────────────────────
 
+/** Timing-safe token comparison to prevent timing attacks */
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(a, 'utf-8'), Buffer.from(b, 'utf-8'));
+  } catch {
+    return false;
+  }
+}
+
 function verifyWebhookAuth(req: Request): boolean {
+  if (!config.OPENCLAW_GATEWAY_TOKEN) return false;
+
   // Method 1: Bearer token matching OPENCLAW_GATEWAY_TOKEN
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7);
-    return !!config.OPENCLAW_GATEWAY_TOKEN && token === config.OPENCLAW_GATEWAY_TOKEN;
+    return safeCompare(authHeader.slice(7), config.OPENCLAW_GATEWAY_TOKEN);
   }
 
   // Method 2: X-Webhook-Secret header
   const webhookSecret = req.headers['x-webhook-secret'] as string;
   if (webhookSecret) {
-    return !!config.OPENCLAW_GATEWAY_TOKEN && webhookSecret === config.OPENCLAW_GATEWAY_TOKEN;
+    return safeCompare(webhookSecret, config.OPENCLAW_GATEWAY_TOKEN);
   }
 
   // No auth provided

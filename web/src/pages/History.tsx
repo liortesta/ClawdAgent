@@ -13,10 +13,13 @@ interface ConversationMessage {
 
 interface Conversation {
   id: string;
-  userId: string;
+  userId?: string;
+  title?: string | null;
   platform: string;
-  startedAt: string;
-  lastMessage: string;
+  startedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastMessage: string | { content: string; role: string; createdAt: string } | null;
   messageCount: number;
   messages?: ConversationMessage[];
 }
@@ -56,6 +59,18 @@ function timeAgo(dateStr: string): string {
   const weeks = Math.floor(days / 7);
   if (weeks < 4) return `${weeks}w ago`;
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/** Extract display text from lastMessage (could be string, object, or null). */
+function getLastMessageText(msg: Conversation['lastMessage']): string {
+  if (!msg) return '';
+  if (typeof msg === 'string') return msg;
+  return msg.content ?? '';
+}
+
+/** Get the best available timestamp for a conversation. */
+function getConvoTime(convo: Conversation): string {
+  return convo.startedAt || convo.createdAt || convo.updatedAt || '';
 }
 
 export default function History() {
@@ -230,15 +245,15 @@ export default function History() {
                         {plat.label}
                       </span>
                       {/* User ID */}
-                      <span className="text-xs text-gray-400 font-mono truncate">{convo.userId}</span>
+                      <span className="text-xs text-gray-400 font-mono truncate">{convo.userId || convo.id?.slice(0, 8)}</span>
                     </div>
                     {/* Last message preview */}
-                    <p className="text-sm text-gray-300 truncate">{convo.lastMessage}</p>
+                    <p className="text-sm text-gray-300 truncate">{convo.title || getLastMessageText(convo.lastMessage) || 'No messages'}</p>
                   </div>
 
                   {/* Meta */}
                   <div className="shrink-0 flex flex-col items-end gap-1">
-                    <span className="text-xs text-gray-500">{timeAgo(convo.startedAt)}</span>
+                    <span className="text-xs text-gray-500">{getConvoTime(convo) ? timeAgo(getConvoTime(convo)) : ''}</span>
                     <span className="flex items-center gap-1 text-xs text-gray-500">
                       <MessageSquare className="w-3 h-3" />
                       {convo.messageCount}
@@ -262,9 +277,9 @@ export default function History() {
                       <div className="flex flex-wrap gap-4 text-xs text-gray-500 pb-2">
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          Started {new Date(convo.startedAt).toLocaleString('en-US', {
+                          Started {getConvoTime(convo) ? new Date(getConvoTime(convo)).toLocaleString('en-US', {
                             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                          })}
+                          }) : 'Unknown'}
                         </span>
                         <span className="flex items-center gap-1">
                           <MessageSquare className="w-3 h-3" />
@@ -272,7 +287,7 @@ export default function History() {
                         </span>
                         <span className="flex items-center gap-1 font-mono">
                           <User className="w-3 h-3" />
-                          {convo.userId}
+                          {convo.userId || convo.id?.slice(0, 8)}
                         </span>
                       </div>
 
@@ -311,7 +326,7 @@ export default function History() {
                       ) : (
                         <div className="bg-dark-800 rounded-lg border border-gray-800 p-3">
                           <p className="text-xs text-gray-500 mb-1">Last message</p>
-                          <p className="text-sm text-gray-300">{convo.lastMessage}</p>
+                          <p className="text-sm text-gray-300">{getLastMessageText(convo.lastMessage)}</p>
                           {convo.messageCount > 1 && (
                             <p className="text-xs text-gray-600 mt-2">
                               + {convo.messageCount - 1} earlier message{convo.messageCount - 1 !== 1 ? 's' : ''}

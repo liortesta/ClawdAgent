@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { AIClient } from '../../core/ai-client.js';
-import { DesktopController, DesktopAction, DesktopResult } from './controller.js';
+import { DesktopController, DesktopAction } from './controller.js';
 import { screenshotToPng, resizeForAI, pngToBase64 } from './image-utils.js';
 import { checkDesktopSafety, DesktopRateLimiter } from './safety.js';
 import config from '../../config.js';
@@ -42,13 +41,11 @@ Important rules:
 - Maximum 20 actions per task`;
 
 export class AIDesktopVision {
-  private ai: AIClient;
   private desktop: DesktopController;
   private rateLimiter: DesktopRateLimiter;
   private maxSteps = 20;
 
-  constructor(ai: AIClient, desktop: DesktopController) {
-    this.ai = ai;
+  constructor(_ai: unknown, desktop: DesktopController) { // _ai reserved for future use
     this.desktop = desktop;
     this.rateLimiter = new DesktopRateLimiter();
   }

@@ -22,10 +22,34 @@ import { classifyComplexity, selectModel, classifyEffort, mapEffortToThinking, w
 import { resolveOllamaModel } from './ollama-model-registry.js';
 import type { CrewOrchestrator } from './crew-orchestrator.js';
 import { onMessageProcessed, onError, getIntelligenceContext, isBridgeReady } from './intelligence-bridge.js';
+import { getApprovalGate } from './approval-gate.js';
 import type { EvolutionEngine } from './evolution-engine.js';
 import config from '../config.js';
 import { extractJSON } from '../utils/helpers.js';
 import logger from '../utils/logger.js';
+
+import { detectSocialEngineering } from '../security/content-guard.js';
+
+// ─── Output Secret Filter ──────────────────────────────────────────
+// Prevents LLM from leaking API keys, tokens, or secrets in responses.
+const SECRET_PATTERNS = [
+  /\b(sk-[a-zA-Z0-9]{20,})\b/g,                          // OpenAI/Anthropic keys
+  /\b(ghp_[a-zA-Z0-9]{36,})\b/g,                          // GitHub PAT
+  /\b(xox[bpoas]-[a-zA-Z0-9-]{10,})\b/g,                  // Slack tokens
+  /\b(AKIA[A-Z0-9]{16})\b/g,                              // AWS access key
+  /\b(eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,})\b/g,    // JWT tokens
+  /\b(BSA_[a-zA-Z0-9]{20,})\b/g,                          // Brave API key
+  /\b([a-f0-9]{64})\b/g,                                  // 64-char hex (likely API secret)
+];
+
+function redactSecrets(text: unknown): string {
+  // Guard: ensure text is always a string (prevents "input.replace is not a function" crash)
+  let redacted = typeof text === 'string' ? text : String(text ?? '');
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, '[REDACTED]');
+  }
+  return redacted;
+}
 
 export interface ProgressEvent {
   type: 'status' | 'agent' | 'tool' | 'thinking' | 'error';
@@ -46,6 +70,10 @@ export interface IncomingMessage {
   attachments?: Array<{ type: string; url: string }>;
   metadata?: Record<string, unknown>;
   onProgress?: (event: ProgressEvent) => void;
+  /** Streaming callback — text tokens as they arrive from the AI */
+  onTextChunk?: (text: string) => void;
+  /** Called when streaming resets (e.g. new tool iteration) — clear partial text */
+  onStreamReset?: () => void;
   responseMode?: ResponseMode;
   model?: string;
 }
@@ -92,8 +120,9 @@ function autoDetectMode(text: string): ResponseMode {
   // Very short messages → always quick
   if (len < 60) return 'quick';
 
-  // Simple greeting / question patterns
-  if (/^(היי|שלום|הי|hello|hi|hey|yo|בוקר טוב|ערב טוב|מה נשמע|מה קורה|thanks|תודה|ok|אוקי|כן|לא|good|טוב|בסדר)/i.test(text.trim())) {
+  // Simple greeting / question patterns — only for short-ish messages
+  // Long messages starting with "היי" may contain complex requests after the greeting
+  if (len < 150 && /^(היי|שלום|הי|hello|hi|hey|yo|בוקר טוב|ערב טוב|מה נשמע|מה קורה|thanks|תודה|ok|אוקי|כן|לא|good|טוב|בסדר)/i.test(text.trim())) {
     return 'quick';
   }
 
@@ -316,8 +345,8 @@ export class Engine {
     try {
       incoming.onProgress?.({ type: 'status', message: 'Quick mode — fast response ⚡' });
 
-      // Load minimal history (last 10 messages instead of 20)
-      const rawHistory = this.getHistory ? await this.getHistory(incoming.userId, incoming.platform, 10, incoming.conversationId) : [];
+      // Load history (enough for conversation continuity)
+      const rawHistory = this.getHistory ? await this.getHistory(incoming.userId, incoming.platform, 20, incoming.conversationId) : [];
       const history = rawHistory.filter(m => {
         if (typeof m.content === 'string') return m.content.trim().length > 0;
         if (Array.isArray(m.content)) return m.content.length > 0;
@@ -335,7 +364,7 @@ export class Engine {
       const minimalPrompt = `${agent.systemPrompt}\n\nUser: ${incoming.userName} | Platform: ${incoming.platform}${hasHebrew ? '\nThe user speaks Hebrew — respond in Hebrew.' : ''}`;
 
       // Build messages
-      const trimmedHistory = trimHistoryToFit(history, 4000);
+      const trimmedHistory = trimHistoryToFit(history, 8000);
       const messages: Message[] = [...trimmedHistory, { role: 'user', content: incoming.text }];
 
       // Select provider (same logic but skip complexity classification)
@@ -405,8 +434,24 @@ export class Engine {
       logger.info('Quick mode response', { agent: agent.id, provider: response.provider, duration });
       pushActivity('response', `[quick:${agent.id}] ${response.content.slice(0, 80)}...`, { agent: agent.id, platform: incoming.platform });
 
+      // ── Social Engineering Detection (Gemini recommendation) ──
+      // High severity = block response entirely (Claude's feedback: warn-only is not enough)
+      const seCheck = detectSocialEngineering(response.content);
+      if (seCheck.detected && seCheck.severity === 'high') {
+        logger.error('HIGH social engineering BLOCKED in quick response', { agent: agent.id, patterns: seCheck.patterns });
+        return {
+          text: '⛔ Response blocked — high-severity social engineering detected. The agent attempted to manipulate you into bypassing security controls.',
+          format: 'text',
+          agentUsed: `quick:${agent.id}:BLOCKED`,
+          provider: response.provider,
+        };
+      }
+      if (seCheck.detected) {
+        logger.warn('Social engineering detected in quick response', { agent: agent.id, severity: seCheck.severity, patterns: seCheck.patterns });
+      }
+
       return {
-        text: response.content,
+        text: redactSecrets(response.content),
         format: 'markdown',
         agentUsed: `quick:${agent.id}`,
         tokensUsed: response.usage ? { input: response.usage.inputTokens, output: response.usage.outputTokens } : undefined,
@@ -421,14 +466,14 @@ export class Engine {
   }
 
   setMemoryFunctions(fns: {
-    getHistory: typeof this.getHistory;
-    saveMessage: typeof this.saveMessage;
-    getUserKnowledge: typeof this.getUserKnowledge;
-    getUserTasks?: typeof this.getUserTasks;
-    getUserServers?: typeof this.getUserServers;
-    learnFromConversation?: typeof this.learnFromConversation;
-    getKnowledgeCount?: typeof this.getKnowledgeCount;
-    getCrossPlatformSummary?: typeof this.getCrossPlatformSummary;
+    getHistory: Engine['getHistory'];
+    saveMessage: Engine['saveMessage'];
+    getUserKnowledge: Engine['getUserKnowledge'];
+    getUserTasks?: Engine['getUserTasks'];
+    getUserServers?: Engine['getUserServers'];
+    learnFromConversation?: Engine['learnFromConversation'];
+    getKnowledgeCount?: Engine['getKnowledgeCount'];
+    getCrossPlatformSummary?: Engine['getCrossPlatformSummary'];
   }) {
     this.getHistory = fns.getHistory;
     this.saveMessage = fns.saveMessage;
@@ -496,6 +541,31 @@ export class Engine {
         (routing.intent === Intent.DESKTOP_CONTROL || routing.intent === Intent.DESKTOP_SCREENSHOT) &&
         this.desktopVision
       ) {
+        // Approval gate — desktop control is high-risk
+        // Auto-approve for authenticated web users (they explicitly typed the command)
+        let approved = incoming.platform === 'web';
+        if (approved) {
+          incoming.onProgress?.({ type: 'status', message: 'Auto-approved desktop control (web user)' });
+          logger.info('Approval auto-granted for web user', { userId: incoming.userId, action: `desktop:${routing.intent}` });
+        } else {
+          const gate = getApprovalGate();
+          approved = await gate.requestApproval({
+            agentId: routing.agentId ?? 'desktop-controller',
+            action: `desktop:${routing.intent}`,
+            description: `Desktop control: ${incoming.text.slice(0, 200)}`,
+            riskCategory: 'desktop_control',
+            riskScore: 0.8,
+            timeoutMs: 60_000,
+          });
+        }
+        if (!approved) {
+          return {
+            text: 'Desktop control action was not approved. The request timed out or was denied.',
+            format: 'text',
+            agentUsed: 'approval-gate',
+          };
+        }
+
         const result = await this.desktopVision.executeTask(incoming.text, incoming.userId);
         const responseText = result.success
           ? `${result.summary}\n\n(${result.steps} step${result.steps !== 1 ? 's' : ''} executed)`
@@ -516,6 +586,31 @@ export class Engine {
 
       // 2b. Project Builder — intercept build_project intent
       if (routing.intent === Intent.BUILD_PROJECT) {
+        // Approval gate — building projects creates files/directories
+        // Auto-approve for authenticated web users (they explicitly typed the command)
+        let approved = incoming.platform === 'web';
+        if (approved) {
+          incoming.onProgress?.({ type: 'status', message: 'Auto-approved project build (web user)' });
+          logger.info('Approval auto-granted for web user', { userId: incoming.userId, action: 'build_project' });
+        } else {
+          const gate = getApprovalGate();
+          approved = await gate.requestApproval({
+            agentId: routing.agentId ?? 'project-builder',
+            action: 'build_project',
+            description: `Build project: ${incoming.text.slice(0, 200)}`,
+            riskCategory: 'filesystem_write',
+            riskScore: 0.6,
+            timeoutMs: 120_000,
+          });
+        }
+        if (!approved) {
+          return {
+            text: 'Project build was not approved. The request timed out or was denied.',
+            format: 'text',
+            agentUsed: 'approval-gate',
+          };
+        }
+
         const templates = this.projectBuilder.getTemplateList();
         const templateList = templates.map(t => `- **${t.id}**: ${t.name} — ${t.description} (${t.stack})`).join('\n');
         const projects = await this.projectBuilder.listProjects();
@@ -642,6 +737,26 @@ If they want to check a running project, use "status" with projectName.`,
           const plan = extractJSON(parseResponse.content);
           let responseText: string;
           if (plan.action === 'send') {
+            // Approval gate — sending email is irreversible
+            // Auto-approve for authenticated web users (they explicitly typed the command)
+            let emailApproved = incoming.platform === 'web';
+            if (emailApproved) {
+              incoming.onProgress?.({ type: 'status', message: `Auto-approved email send to ${plan.to} (web user)` });
+              logger.info('Approval auto-granted for web user', { userId: incoming.userId, action: 'email:send' });
+            } else {
+              const gate = getApprovalGate();
+              emailApproved = await gate.requestApproval({
+                agentId: routing.agentId ?? 'email',
+                action: `email:send`,
+                description: `Send email to ${plan.to}: "${(plan.subject ?? '').slice(0, 100)}"`,
+                riskCategory: 'outgoing_communication',
+                riskScore: 0.6,
+                timeoutMs: 120_000,
+              });
+            }
+            if (!emailApproved) {
+              return { text: 'Email send was not approved. Action cancelled.', format: 'text' as const, agentUsed: 'approval-gate' };
+            }
             const { sendEmail } = await import('../actions/email/gmail.js');
             await sendEmail(plan.to, plan.subject, plan.body);
             responseText = `✅ Email sent to ${plan.to}: "${plan.subject}"`;
@@ -860,9 +975,16 @@ If they want to check a running project, use "status" with projectName.`,
         activeTools: agentTools,
       });
 
-      // 7. Build message array with history
-      const trimmedHistory = trimHistoryToFit(history, 6000);
-      const messages: Message[] = [...trimmedHistory, { role: 'user', content: incoming.text }];
+      // 7. Build message array with history (generous window for continuity)
+      const trimmedHistory = trimHistoryToFit(history, 16000);
+
+      // If we had to trim, prepend a summary note so the AI knows there's earlier context
+      const messages: Message[] = [];
+      if (history.length > trimmedHistory.length) {
+        const droppedCount = history.length - trimmedHistory.length;
+        messages.push({ role: 'user', content: `[System note: ${droppedCount} earlier messages in this conversation were trimmed for context. The most recent messages follow. If the user references something from earlier, acknowledge you may need them to remind you.]` });
+      }
+      messages.push(...trimmedHistory, { role: 'user', content: incoming.text });
 
       // 8. Smart model/provider selection
       //
@@ -1061,6 +1183,8 @@ If they want to check a running project, use "status" with projectName.`,
             ...(selectedProvider ? { provider: selectedProvider } : {}),
             ...(agent.maxToolIterations ? { maxToolIterations: agent.maxToolIterations } : {}),
             ...(orPlugins ? { plugins: orPlugins } : {}),
+            ...(incoming.onTextChunk ? { onTextChunk: incoming.onTextChunk } : {}),
+            ...(incoming.onStreamReset ? { onStreamReset: incoming.onStreamReset } : {}),
           },
           async (toolName, toolInput) => {
             const toolAction = toolInput?.action ? ` → ${toolInput.action}` : '';
@@ -1069,10 +1193,11 @@ If they want to check a running project, use "status" with projectName.`,
               toolInput.userId = incoming.userId;
             }
             // Inject user role for permission checks
-            toolInput._userRole = incoming.userRole ?? 'admin';
+            toolInput._userRole = incoming.userRole ?? 'user';
             toolInput._userId = incoming.userId;
             const result = await executeTool(toolName, toolInput);
-            const ok = typeof result === 'string' && result.length > 0 && !result.startsWith('Error');
+            const resultStr = String(result ?? '');
+            const ok = resultStr.length > 0 && !resultStr.startsWith('Error');
             incoming.onProgress?.({ type: 'status', message: `${toolName}${toolAction} ${ok ? 'done' : 'failed'}`, tool: toolName });
             return result;
           },
@@ -1095,6 +1220,7 @@ If they want to check a running project, use "status" with projectName.`,
           ...(selectedModelId ? { model: selectedModelId } : {}),
           ...(selectedProvider ? { provider: selectedProvider } : {}),
           ...(orPlugins ? { plugins: orPlugins } : {}),
+          ...(incoming.onTextChunk ? { onTextChunk: incoming.onTextChunk } : {}),
         });
       }
 
@@ -1174,8 +1300,31 @@ If they want to check a running project, use "status" with projectName.`,
 
       pushActivity('response', `[${agent.id}] ${response.content.slice(0, 80)}${response.content.length > 80 ? '...' : ''}`, { agent: agent.id, platform: incoming.platform });
 
+      // ── Social Engineering Detection (Gemini recommendation) ──
+      // Scan agent output for attempts to manipulate user into bypassing security
+      // High severity = block entirely (Claude's feedback: warn-only is not enough)
+      const seResult = detectSocialEngineering(response.content);
+      if (seResult.detected && seResult.severity === 'high') {
+        logger.error('HIGH social engineering BLOCKED in agent response', {
+          agent: agent.id, patterns: seResult.patterns,
+        });
+        return {
+          text: '⛔ Response blocked — high-severity social engineering detected. The agent attempted to manipulate you into bypassing security controls. This incident has been logged.',
+          format: 'text',
+          agentUsed: `${agent.id}:BLOCKED`,
+          provider: response.provider,
+        };
+      }
+      let finalText = redactSecrets(response.content);
+      if (seResult.detected && seResult.severity === 'medium') {
+        logger.warn('Social engineering detected in agent response', {
+          agent: agent.id, severity: seResult.severity, patterns: seResult.patterns,
+        });
+        finalText = `⚠️ **Security Warning**: This response contains patterns that may attempt to bypass security controls (severity: ${seResult.severity}).\n\n---\n\n${finalText}`;
+      }
+
       return {
-        text: response.content,
+        text: finalText,
         thinking,
         format: 'markdown',
         agentUsed: agent.id,

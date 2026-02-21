@@ -28,7 +28,16 @@ import { BaseTool, ToolResult } from '../agents/tools/base-tool.js';
 import { hasPermission } from '../security/roles.js';
 import { audit } from '../security/audit-log.js';
 import { onToolExecuted, checkCommandSafety, isBridgeReady } from './intelligence-bridge.js';
+import { getToolRegistry } from './tool-registry.js';
+import { isPanicActive } from './kill-switch.js';
+import { getApprovalGate } from './approval-gate.js';
 import logger from '../utils/logger.js';
+
+// Tools that require human approval before execution (irreversible external actions)
+const APPROVAL_REQUIRED_TOOLS: Record<string, { riskScore: number; riskCategory: string; timeoutMs: number }> = {
+  trading: { riskScore: 0.9, riskCategory: 'financial_transaction', timeoutMs: 60_000 },
+  social: { riskScore: 0.5, riskCategory: 'outgoing_communication', timeoutMs: 120_000 },
+};
 import type { PluginLoader } from './plugin-loader.js';
 import type { ToolCreator } from './tool-creator.js';
 
@@ -62,6 +71,7 @@ export function setToolCreator(creator: ToolCreator): void {
 
 export function initTools(): void {
   if (initialized) return;
+  // Register all built-in tools (kept for backward compatibility — registry handles config overrides)
   toolInstances.set('bash', new BashTool());
   toolInstances.set('file', new FileTool());
   toolInstances.set('search', new SearchTool());
@@ -88,8 +98,24 @@ export function initTools(): void {
   toolInstances.set('trading', new TradingTool());
   toolInstances.set('rag', new RAGTool());
   toolInstances.set('whatsapp', new WhatsAppTool());
+
+  // Apply config-driven overrides (TOOLS_DISABLED env var)
+  const registry = getToolRegistry();
+  const disabledList = process.env.TOOLS_DISABLED?.split(',').map(s => s.trim()).filter(Boolean) ?? [];
+  for (const name of disabledList) {
+    toolInstances.delete(name);
+    registry.setEnabled(name, false);
+    logger.info('Tool disabled via config', { name });
+  }
+
   initialized = true;
-  logger.info('Tool executor initialized', { tools: Array.from(toolInstances.keys()) });
+  logger.info('Tool executor initialized', { tools: Array.from(toolInstances.keys()), disabled: disabledList });
+}
+
+/** Get list of all registered tools and their status */
+export function getToolStatus(): Array<{ name: string; enabled: boolean }> {
+  const registry = getToolRegistry();
+  return registry.listAll();
 }
 
 /**
@@ -716,6 +742,37 @@ export function getToolDefinitions(allowedTools: string[]): any[] {
   return definitions;
 }
 
+// ── Concurrency Limiter (ChatGPT recommendation) ──
+// Prevents resource exhaustion from too many parallel tool executions
+// Bounded queue prevents DoS via queue flooding (ChatGPT round-2 feedback)
+const MAX_CONCURRENT_TOOLS = 5;
+const MAX_QUEUE_LENGTH = 20;
+let activeTasks = 0;
+const waitQueue: Array<() => void> = [];
+
+async function acquireConcurrencySlot(): Promise<void> {
+  if (activeTasks < MAX_CONCURRENT_TOOLS) {
+    activeTasks++;
+    return;
+  }
+  // Reject if queue is full — prevents unbounded memory growth
+  if (waitQueue.length >= MAX_QUEUE_LENGTH) {
+    throw new Error(`Tool execution rejected: concurrency queue full (${MAX_QUEUE_LENGTH} waiting). Try again later.`);
+  }
+  // Wait for a slot to open
+  return new Promise<void>((resolve) => {
+    waitQueue.push(() => { activeTasks++; resolve(); });
+  });
+}
+
+function releaseConcurrencySlot(): void {
+  activeTasks--;
+  if (waitQueue.length > 0 && activeTasks < MAX_CONCURRENT_TOOLS) {
+    const next = waitQueue.shift()!;
+    next();
+  }
+}
+
 // Per-tool timeout limits (ms) — prevents a stuck tool from blocking everything
 const TOOL_TIMEOUTS: Record<string, number> = {
   'bash': 180000,         // 3min — SSH commands and complex ops can be slow
@@ -745,6 +802,12 @@ export async function executeTool(
   toolName: string,
   input: Record<string, unknown>,
 ): Promise<ToolResult> {
+  // ── PANIC MODE CHECK — blocks ALL tool execution when kill switch is active ──
+  if (isPanicActive()) {
+    logger.warn('Tool blocked by PANIC MODE', { toolName });
+    return { success: false, output: '', error: 'PANIC MODE ACTIVE — all tools disabled. Deactivate panic mode to resume.' };
+  }
+
   if (!initialized) initTools();
 
   // ── Handle create_tool meta-tool ──
@@ -813,6 +876,25 @@ export async function executeTool(
     return { success: false, output: '', error: `Access denied: role '${userRole}' cannot use tool '${toolName}'` };
   }
 
+  // ── Approval Gate: require human approval for high-risk tools ──
+  const approvalConfig = APPROVAL_REQUIRED_TOOLS[toolName];
+  if (approvalConfig) {
+    const gate = getApprovalGate();
+    const inputSummary = JSON.stringify(input).slice(0, 200);
+    const approved = await gate.requestApproval({
+      agentId: currentAgentId,
+      action: `${toolName}:execute`,
+      description: `Tool "${toolName}" called by ${currentAgentId}: ${inputSummary}`,
+      riskCategory: approvalConfig.riskCategory,
+      riskScore: approvalConfig.riskScore,
+      timeoutMs: approvalConfig.timeoutMs,
+    });
+    if (!approved) {
+      logger.info('Tool blocked by approval gate', { toolName, agent: currentAgentId });
+      return { success: false, output: '', error: `Tool "${toolName}" requires human approval. Action was not approved.` };
+    }
+  }
+
   // ── Safety Gate: check dangerous commands before execution ──
   if ((toolName === 'bash' || toolName === 'ssh') && isBridgeReady()) {
     const command = String(input.command ?? '');
@@ -838,6 +920,9 @@ export async function executeTool(
   logger.info('Executing tool', { toolName, input: JSON.stringify(input).slice(0, 300) });
   const start = Date.now();
   const timeout = TOOL_TIMEOUTS[toolName] ?? DEFAULT_TOOL_TIMEOUT;
+
+  // ── Concurrency Gate — wait for available slot ──
+  await acquireConcurrencySlot();
 
   try {
     const result = await Promise.race([
@@ -883,5 +968,7 @@ export async function executeTool(
     }
 
     return { success: false, output: '', error: err.message };
+  } finally {
+    releaseConcurrencySlot();
   }
 }

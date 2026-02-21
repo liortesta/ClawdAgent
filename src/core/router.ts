@@ -1,5 +1,4 @@
 import { AIClient } from './ai-client.js';
-import config from '../config.js';
 import logger from '../utils/logger.js';
 import { extractJSON } from '../utils/helpers.js';
 
@@ -236,7 +235,6 @@ export class IntentRouter {
    * Catches the most common Hebrew + English patterns.
    */
   private keywordClassify(message: string): RoutingResult | null {
-    const m = message.toLowerCase();
 
     // Crypto trading — buy/sell/trade
     if (/\b(buy|sell|trade|long|short)\b.*\b(btc|eth|sol|bnb|xrp|crypto|usdt)\b|קנה.*\b(btc|eth|ביטקוין|אתריום|קריפטו)\b|מכור.*\b(btc|eth|ביטקוין|אתריום|קריפטו)\b|סחר.*קריפטו|מסחר.*קריפטו|DCA|dca|סקאלפ|scalp/i.test(message)) {

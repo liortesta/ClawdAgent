@@ -1,5 +1,4 @@
 import { getGitHubClient } from './client.js';
-import logger from '../../utils/logger.js';
 
 export async function getRepo(owner: string, repo: string) {
   const client = getGitHubClient();

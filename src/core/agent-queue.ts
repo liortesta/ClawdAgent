@@ -1,5 +1,5 @@
 import { Queue, Worker, Job } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis } from 'ioredis';
 import config from '../config.js';
 import logger from '../utils/logger.js';
 
@@ -28,13 +28,13 @@ const QUEUE_PREFIX = 'clawdagent-agent';
 export class AgentQueueManager {
   private queues: Map<string, Queue> = new Map();
   private workers: Map<string, Worker> = new Map();
-  private connection: IORedis;
+  private connection: Redis;
   private handler: AgentHandler | null = null;
   private initialized = false;
   private redisAvailable = false;
 
   constructor() {
-    this.connection = new IORedis(config.REDIS_URL, {
+    this.connection = new Redis(config.REDIS_URL, {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
       lazyConnect: true,

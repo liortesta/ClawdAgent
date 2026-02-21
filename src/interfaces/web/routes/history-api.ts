@@ -27,11 +27,11 @@ export function setupHistoryRoutes(): Router {
     try {
       const dbUserId = await resolveDbUserId(user.userId);
       const conversations = await getUserConversations(dbUserId, {
-        platform: (platform as string) || 'web',
+        platform: (platform as string) || undefined,
         limit,
         offset,
       });
-      res.json({ conversations });
+      res.json({ conversations, total: conversations.length });
     } catch (err: any) {
       logger.error('Failed to list conversations', { error: err.message });
       res.status(500).json({ error: `Failed to load conversations: ${err.message}` });

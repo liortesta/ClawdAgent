@@ -29,7 +29,6 @@ export function setupRAGRoutes(ragEngine: RAGEngine): Router {
         'text/javascript', 'application/javascript', 'text/x-python',
         'text/typescript', 'application/typescript',
       ];
-      // Also allow by extension
       const ext = file.originalname.split('.').pop()?.toLowerCase();
       const allowedExts = ['txt', 'md', 'csv', 'json', 'pdf', 'docx', 'xlsx', 'xls', 'ts', 'js', 'py', 'jpg', 'jpeg', 'png', 'gif', 'webp'];
       if (allowed.includes(file.mimetype) || (ext && allowedExts.includes(ext))) {
@@ -65,7 +64,6 @@ export function setupRAGRoutes(ragEngine: RAGEngine): Router {
         const vectorStore = (ragEngine as any).vectorStore;
         await vectorStore.addChunks(chunks, user.userId);
 
-        // Clean up uploaded file
         try { unlinkSync(file.path); } catch {}
 
         res.json({
@@ -76,8 +74,7 @@ export function setupRAGRoutes(ragEngine: RAGEngine): Router {
           description: description.slice(0, 200) + (description.length > 200 ? '...' : ''),
         });
       } else {
-        // For documents: use RAG engine to ingest
-        // Rename to preserve original extension (multer strips it)
+        // For documents: use RAG engine to ingest directly
         const { renameSync } = await import('fs');
         const newPath = `${file.path}.${ext}`;
         renameSync(file.path, newPath);
@@ -110,7 +107,6 @@ export function setupRAGRoutes(ragEngine: RAGEngine): Router {
         return;
       }
 
-      // Fetch the URL content
       const response = await fetch(url, {
         headers: { 'User-Agent': 'ClawdAgent/6.0 RAG Ingestion' },
         signal: AbortSignal.timeout(30000),
@@ -121,7 +117,6 @@ export function setupRAGRoutes(ragEngine: RAGEngine): Router {
       let text: string;
 
       if (contentType.includes('text/html')) {
-        // Strip HTML tags for basic text extraction
         const html = await response.text();
         text = html
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')

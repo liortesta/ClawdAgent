@@ -1,11 +1,24 @@
 import type pkg from 'whatsapp-web.js';
 type WAClient = InstanceType<typeof pkg.Client>;
 import { Engine, IncomingMessage } from '../../core/engine.js';
+import config from '../../config.js';
 import logger from '../../utils/logger.js';
 
 export function setupHandlers(client: WAClient, engine: Engine) {
+  const adminIds = config.WHATSAPP_ADMIN_IDS;
+  const denyByDefault = config.CHANNEL_SECURITY_MODE === 'allowlist';
+
   client.on('message', async (msg) => {
     if (msg.fromMe) return;
+
+    // Allowlist guard — deny-by-default security (matches Telegram/Discord pattern)
+    if (denyByDefault && adminIds.length > 0) {
+      const senderId = msg.from.replace(/@c\.us$/, '');
+      if (!adminIds.some(id => senderId.includes(id))) {
+        logger.warn('Unauthorized WhatsApp access blocked', { from: msg.from });
+        return;
+      }
+    }
 
     // Voice messages
     if (msg.hasMedia && msg.type === 'ptt') {

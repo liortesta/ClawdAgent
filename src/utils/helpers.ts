@@ -51,9 +51,10 @@ export function bytesToHuman(bytes: number): string {
  * Hebrew + emoji text from Telegram can contain lone surrogates (U+D800–U+DFFF)
  * which cause "no low surrogate in string" errors in the Anthropic API.
  */
-export function sanitizeUnicode(text: string): string {
+export function sanitizeUnicode(text: unknown): string {
+  const str = typeof text === 'string' ? text : String(text ?? '');
   // eslint-disable-next-line no-control-regex
-  return text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+  return str.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
 }
 
 export function parseCommand(text: string): { command: string; args: string } | null {

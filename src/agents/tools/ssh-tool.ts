@@ -1,6 +1,9 @@
 import { BaseTool, ToolResult } from './base-tool.js';
 import { getSSHManager } from '../../actions/ssh/session-manager.js';
 import type { SSHSessionManager, SSHServer, ExecResult } from '../../actions/ssh/session-manager.js';
+import { guardCommand } from '../../security/command-guard.js';
+import { sandboxCommand } from '../../security/bash-sandbox.js';
+import { audit } from '../../security/audit-log.js';
 
 // ---------------------------------------------------------------------------
 // Optional modules — these may not exist yet. We lazy-import and degrade
@@ -59,6 +62,35 @@ class SSHTool extends BaseTool {
 
   private get manager(): SSHSessionManager {
     return getSSHManager();
+  }
+
+  /**
+   * SSH Command Guard — applies the same command-guard + sandbox checks
+   * that protect bash commands. Blocks dangerous patterns and secret exfil.
+   */
+  private async guardSSHCommand(command: string, userId = 'system'): Promise<ToolResult | null> {
+    // Layer 1: Command guard — block dangerous patterns (rm -rf /, DROP TABLE, etc.)
+    const guardResult = guardCommand(command);
+    if (!guardResult.allowed) {
+      this.error('SSH command blocked by guard', { command: command.slice(0, 100), reason: guardResult.reason });
+      await audit(userId, 'ssh.blocked', { command: command.slice(0, 200), reason: guardResult.reason });
+      return { success: false, output: '', error: `SSH blocked: ${guardResult.reason ?? 'dangerous command'}` };
+    }
+
+    // Layer 2: Sandbox — check for secret exfiltration attempts
+    const sandboxResult = sandboxCommand(command);
+    if (!sandboxResult.allowed) {
+      this.error('SSH command blocked by sandbox', { command: command.slice(0, 100), reason: sandboxResult.reason });
+      await audit(userId, 'ssh.sandbox_blocked', { command: command.slice(0, 200), reason: sandboxResult.reason });
+      return { success: false, output: '', error: `SSH blocked: ${sandboxResult.reason ?? 'sandbox violation'}` };
+    }
+
+    // Log caution-level commands (installs, service restarts, etc.)
+    if (guardResult.level === 'caution') {
+      this.log('SSH caution command', { command: command.slice(0, 100) });
+    }
+
+    return null; // null = command is allowed
   }
 
   // -------------------------------------------------------------------------
@@ -309,6 +341,10 @@ class SSHTool extends BaseTool {
     const command = input.command as string;
     if (!command) return { success: false, output: '', error: 'Missing required param: command' };
 
+    // Security: apply command-guard + sandbox checks
+    const blocked = await this.guardSSHCommand(command, (input._userId as string) ?? 'system');
+    if (blocked) return blocked;
+
     let serverId = input.serverId as string;
     if (!serverId) {
       serverId = this.manager.getActive() as string;
@@ -326,6 +362,10 @@ class SSHTool extends BaseTool {
   private async execAll(input: Record<string, unknown>): Promise<ToolResult> {
     const command = input.command as string;
     if (!command) return { success: false, output: '', error: 'Missing required param: command' };
+
+    // Security: apply command-guard + sandbox checks
+    const blocked = await this.guardSSHCommand(command, (input._userId as string) ?? 'system');
+    if (blocked) return blocked;
 
     this.log('ExecAll', { command: command.slice(0, 100) });
 
@@ -638,6 +678,13 @@ class SSHTool extends BaseTool {
   // File Transfer
   // -------------------------------------------------------------------------
 
+  /** Block access to sensitive local paths during file transfer */
+  private isLocalPathSafe(p: string): boolean {
+    const normalized = p.replace(/\\/g, '/').toLowerCase();
+    const blocked = ['/etc/', '/.ssh/', '/.env', '/.git/', '/passwd', '/shadow', '/id_rsa', '/id_ed25519', '/credentials'];
+    return !blocked.some(b => normalized.includes(b));
+  }
+
   private async uploadFile(input: Record<string, unknown>): Promise<ToolResult> {
     let serverId = input.serverId as string;
     const localPath = input.localPath as string;
@@ -645,6 +692,7 @@ class SSHTool extends BaseTool {
 
     if (!localPath) return { success: false, output: '', error: 'Missing required param: localPath' };
     if (!remotePath) return { success: false, output: '', error: 'Missing required param: remotePath' };
+    if (!this.isLocalPathSafe(localPath)) return { success: false, output: '', error: `Blocked: local path "${localPath}" targets a sensitive location` };
 
     if (!serverId) {
       serverId = this.manager.getActive() as string;
@@ -670,6 +718,7 @@ class SSHTool extends BaseTool {
 
     if (!remotePath) return { success: false, output: '', error: 'Missing required param: remotePath' };
     if (!localPath) return { success: false, output: '', error: 'Missing required param: localPath' };
+    if (!this.isLocalPathSafe(localPath)) return { success: false, output: '', error: `Blocked: local path "${localPath}" targets a sensitive location` };
 
     if (!serverId) {
       serverId = this.manager.getActive() as string;
@@ -941,6 +990,23 @@ class SSHTool extends BaseTool {
       // Simple variable substitution: {{varName}} -> value
       for (const [key, val] of Object.entries(vars)) {
         command = command.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(val));
+      }
+
+      // Security: apply command-guard + sandbox checks to each workflow step
+      const blocked = await this.guardSSHCommand(command);
+      if (blocked) {
+        results.push({
+          step: i + 1,
+          name: stepName,
+          serverId,
+          success: false,
+          output: blocked.error ?? 'Command blocked by security guard',
+        });
+        if (onError === 'stop') {
+          overallSuccess = false;
+          break;
+        }
+        continue;
       }
 
       try {
