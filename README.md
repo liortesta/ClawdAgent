@@ -8,7 +8,7 @@
 
 An open-source autonomous AI agent that thinks, learns, evolves, and never stops.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 [![Claude](https://img.shields.io/badge/AI-Claude%204-purple.svg)](https://anthropic.com/)
@@ -210,7 +210,7 @@ POST /acp/runs/:id/cancel          — Cancel run
 
 ```bash
 # 1. Clone
-git clone https://github.com/liorbs/clawdagent.git
+git clone https://github.com/liortesta/ClawdAgent.git
 cd clawdagent
 
 # 2. Install dependencies
@@ -456,7 +456,7 @@ pm2 save
 - [Contributing Guide](CONTRIBUTING.md) — How to contribute
 - [Security Policy](SECURITY.md) — Vulnerability reporting
 - [Environment Variables](.env.example) — Full configuration reference
-- [License](LICENSE) — MIT License
+- [License](LICENSE) — Apache 2.0
 
 ---
 
@@ -473,6 +473,32 @@ pm2 save
 | **Communication** | grammy (Telegram), discord.js, whatsapp-web.js |
 | **Security** | Helmet, bcrypt, JWT, Zod validation |
 | **DevOps** | Docker, PM2, GitHub Actions |
+
+---
+
+## Roadmap
+
+### Near Term
+- [ ] Slack integration
+- [ ] Matrix/Element support
+- [ ] Plugin marketplace
+- [ ] Visual workflow builder (drag-and-drop)
+- [ ] Mobile companion app (React Native)
+
+### Medium Term
+- [ ] Hosted SaaS version (ClawdAgent Cloud)
+- [ ] Team collaboration (multi-user workspaces)
+- [ ] Fine-tuned agent models
+- [ ] Voice-first interface (real-time conversation)
+- [ ] Kubernetes operator for scaling
+
+### Long Term
+- [ ] Federated agent network (agent-to-agent across instances)
+- [ ] On-device inference (WebGPU/WASM)
+- [ ] Enterprise SSO & audit compliance
+- [ ] Agent marketplace (community-built agents & tools)
+
+See [ROADMAP.md](ROADMAP.md) for the full vision.
 
 ---
 
@@ -493,13 +519,36 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+Licensed under the [Apache License 2.0](LICENSE).
+
+```
+Copyright 2026 Lior Ben Shimon
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+```
+
+### Why Apache 2.0?
+
+| Protection | MIT | Apache 2.0 |
+|-----------|-----|------------|
+| Patent grant | No | **Yes** |
+| Trademark protection | No | **Yes** |
+| Contributor license | Implicit | **Explicit** |
+| Attribution required | Yes | Yes |
+| Commercial use | Yes | Yes |
+| Modification | Yes | Yes |
+
+Apache 2.0 protects both users and contributors with explicit patent grants and trademark rules, while remaining fully open-source and business-friendly.
 
 ---
 
 <div align="center">
 
-**Built with Claude by [Lior Ben Shimon](https://github.com/liorbs)**
+**Built with Claude by [Lior Ben Shimon](https://github.com/liortesta)**
 
 If this project helps you, please give it a star!
 

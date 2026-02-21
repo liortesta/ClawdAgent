@@ -41,5 +41,6 @@ ClawdAgent implements defense-in-depth:
 
 | Version | Supported |
 |---------|-----------|
-| 5.x     | Yes       |
+| 6.x     | Yes       |
+| 5.x     | Security fixes only |
 | < 5.0   | No        |

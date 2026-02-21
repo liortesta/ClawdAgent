@@ -3,15 +3,15 @@
   "version": "6.0.0",
   "description": "Autonomous AI agent system — 18 agents, 29 tools, 74 skills. Self-evolving, multi-platform, multi-model.",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "Lior Ben Shimon",
   "repository": {
     "type": "git",
-    "url": "https://github.com/liorbs/clawdagent.git"
+    "url": "https://github.com/liortesta/ClawdAgent.git"
   },
-  "homepage": "https://github.com/liorbs/clawdagent#readme",
+  "homepage": "https://github.com/liortesta/ClawdAgent#readme",
   "bugs": {
-    "url": "https://github.com/liorbs/clawdagent/issues"
+    "url": "https://github.com/liortesta/ClawdAgent/issues"
   },
   "keywords": [
     "ai-agent",
