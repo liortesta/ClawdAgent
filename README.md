@@ -548,7 +548,7 @@ Apache 2.0 protects both users and contributors with explicit patent grants and 
 
 <div align="center">
 
-**Built with Claude by [Lior Ben Shimon](https://github.com/liortesta)**
+**Built with Claude by [Lior Testa - TestaMind](https://github.com/liortesta)**
 
 If this project helps you, please give it a star!
 
