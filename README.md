@@ -47,6 +47,73 @@ ClawdAgent: ✅ Generated script with AI → created video via Kie.ai
             → tracked publishing costs ($0.12 total)
 ```
 
+```
+You: "Set up DCA trading on Bitcoin — $50 daily, stop if it drops 20%"
+ClawdAgent: ✅ Connected to Binance → configured DCA strategy → set risk limits
+            → placed first buy order ($50 USDT → 0.00052 BTC)
+            → scheduled daily recurring buys via cron
+            → set 20% drawdown kill switch → activated portfolio tracker
+            → will send Telegram alerts on every trade + daily P&L summary
+```
+
+```
+You: "Research the top 5 competitors in our space and email me a report"
+ClawdAgent: ✅ Searched Brave + scraped competitor websites with Playwright
+            → analyzed pricing, features, tech stacks of 5 companies
+            → generated a detailed comparison report (3 pages)
+            → created competitive positioning matrix
+            → emailed the report via Gmail with PDF attachment
+            → saved findings to knowledge base for future reference
+```
+
+```
+You: "My phone isn't syncing emails, fix it"
+ClawdAgent: ✅ Connected to your Android via ADB → checked Gmail app status
+            → found sync disabled after last OS update → re-enabled sync
+            → cleared app cache (was 2.1 GB) → force-synced inbox
+            → verified 47 new emails loaded → sent you confirmation on Telegram
+            → created a skill "fix-email-sync" for next time
+```
+
+### What Makes ClawdAgent Different
+
+Most AI agents are **reactive** — you ask, they answer. ClawdAgent is **autonomous**:
+
+- **It thinks on its own** — The Proactive Thinker spots problems before you do. Server going down? SSL cert expiring? Budget running low? ClawdAgent alerts you before it becomes a crisis.
+- **It creates its own tools** — Need a new capability? ClawdAgent builds it at runtime. No waiting for the next release.
+- **It spawns its own agents** — The Meta Agent creates new specialized agents on demand. Need a "Legal Document Analyzer"? Ask once and it exists forever.
+- **It evolves itself** — The Evolution Engine runs improvement cycles: learns from failures, optimizes prompts, merges redundant agents, discovers new patterns.
+- **It secures itself** — 12 layers of Zero Trust defense. Every memory entry is SHA-256 checksummed. Every tool is hash-pinned. Every command is sandboxed. Every security check fails closed.
+- **It runs your business** — Not just chat. Crypto trading with 5 strategies. Social publishing to 9 platforms. Server management with auto-repair. Email, calendar, browser automation, mobile control.
+- **It speaks every protocol** — MCP (Anthropic), A2A (Google), ACP (IBM). Your agent can talk to any other compliant agent on the internet.
+- **It runs anywhere** — Linux VPS, Mac, Windows, Docker, Raspberry Pi. Local models (Ollama) for full privacy. No cloud dependency.
+
+### By The Numbers
+
+| Metric | Count |
+|--------|-------|
+| Lines of TypeScript | **28,500+** |
+| Core Modules | **51** |
+| Specialized Agents | **18** |
+| Integrated Tools | **29** |
+| Pre-loaded Skills | **74** |
+| Security Layers | **12** |
+| Intelligence Subsystems | **9** |
+| Communication Platforms | **5** |
+| Agent Protocols | **3** (MCP + A2A + ACP) |
+| AI Providers | **4** (Anthropic + OpenRouter + Ollama + Claude Code) |
+| AI Models Available | **400+** (via OpenRouter) |
+| Social Platforms | **9** |
+| Crypto Exchanges | **100+** (via CCXT) |
+| Trading Strategies | **5** |
+| Heartbeat Alert Types | **9** |
+| Self-Repair Patterns | **9** |
+| Dashboard Pages | **16** |
+| Injection Detection Patterns | **20+** |
+| Skill Scanner Patterns | **25+** |
+| Intent Classifications | **45+** |
+| Integrations | **60+** |
+
 ---
 
 ## Why ClawdAgent?
@@ -129,6 +196,128 @@ ClawdAgent: ✅ Generated script with AI → created video via Kie.ai
 | Config Management | .env | Code | Code | Code | Docker | **Zod-validated .env + YAML hot-reload + Web UI** |
 | Open Source | Yes | Yes | Yes | Yes | Yes | **Apache 2.0 (patent + trademark protection)** |
 
+### ClawdAgent vs OpenClaw — The Definitive Comparison
+
+[OpenClaw](https://openclaw.ai) (by Peter Steinberger) is the most well-known personal AI assistant. Here's how ClawdAgent compares on every dimension:
+
+#### Architecture & Intelligence
+
+| Feature | OpenClaw | **ClawdAgent** |
+|---------|----------|----------------|
+| Architecture | Single agent + skills | **18 specialized agents + Meta Agent + Crew Orchestrator** |
+| Agent Brain | Single LLM call | **Intelligence Bridge: 9 subsystems (scoring, memory, governance, cost, routing, observability, goals, safety, feedback)** |
+| Multi-Agent Orchestration | No (single thread) | **Crew Orchestrator + Agent Factory + dynamic spawn** |
+| Agent Self-Creation | No | **Meta Agent creates new agents at runtime based on need** |
+| Dynamic Tool Creation | No | **Creates new tools at runtime + auto-tool discovery** |
+| Self-Evolution | Skill creation via chat | **Evolution Engine: autonomous improvement cycles + self-repair (9 fix patterns) + auto-learn** |
+| Proactive Thinking | Heartbeats | **Proactive Thinker: spots problems, finds opportunities, sends alerts + 9 alert types** |
+| Intent Classification | Basic routing | **45+ intents with multilingual support (Hebrew, Arabic, CJK)** |
+| Extended Thinking | No | **32K thinking tokens for deep reasoning** |
+| Goal Engine | No | **Self-initiated 30/60/90-day goals with KPIs and milestones** |
+| Behavior Adaptation | Persona onboarding | **Multi-language personality variants + adaptive interaction styles** |
+| Smart Model Routing | Provider fallback | **Cost-aware routing: complexity → model, cost → provider, budget → tier** |
+
+#### Security & Trust
+
+| Security Feature | OpenClaw | **ClawdAgent** |
+|-----------------|----------|----------------|
+| Defense Architecture | Sandboxed execution | **12-layer defense-in-depth (Zero Trust)** |
+| Prompt Injection Guard | Basic filtering | **20+ regex patterns + AI detection + pre-AI message guard** |
+| Social Engineering Detection | No | **15 patterns, auto-block on high severity** |
+| Memory Integrity | No | **SHA-256 checksums on every entry, tamper quarantine** |
+| Audit Trail | Logs | **Tamper-evident hash chain on ALL operations** |
+| Governance Engine | No | **Risk budgets, autonomy levels, cost/risk limits** |
+| Fail-Closed Design | No (permissive) | **ALL security checks fail-closed on error** |
+| Kill Switch | No | **Emergency stop + cost tracking + failure data** |
+| Approval Gate | No | **Human-in-the-loop for critical ops (trading, social, destructive)** |
+| Skill Scanning | Basic trust | **25+ static analysis patterns, severity scoring, reputation tracking** |
+| Tool Integrity | No | **SHA-256 hash-pinning detects MCP rug-pulls** |
+| RBAC + JWT Auth | Basic auth | **Full RBAC + JWT + per-user permissions + rate limiting** |
+| Command Sandboxing | Docker sandbox | **Bash sandbox + command guard + bounded concurrency** |
+| Encryption at Rest | No | **AES encryption + automatic key rotation** |
+
+#### Platform & Communication
+
+| Platform | OpenClaw | **ClawdAgent** |
+|----------|----------|----------------|
+| WhatsApp | Yes | **Yes (WhatsApp Web + QR pairing from dashboard)** |
+| Telegram | Yes | **Yes (full bot: keyboards, media, voice, inline)** |
+| Discord | Yes | **Yes (slash commands, embeds, reactions)** |
+| Web Dashboard | No (terminal only) | **Full React Dashboard: 16 pages, real-time WebSocket, charts** |
+| Slack | Yes | Roadmap |
+| Signal | Yes | Roadmap |
+| iMessage | Yes (macOS) | Roadmap |
+| A2A Protocol (Google) | No | **Full compliance: Agent Card, Tasks, SSE streaming** |
+| ACP Protocol (IBM) | No | **Full compliance: REST runs, agent descriptor** |
+| MCP Protocol (Anthropic) | Partial | **Deep integration: 9 MCP servers, JSON-RPC 2.0** |
+
+#### AI Models & Providers
+
+| Provider | OpenClaw | **ClawdAgent** |
+|----------|----------|----------------|
+| Anthropic (Claude) | Yes | **Yes (Claude 4.6, direct API)** |
+| OpenAI (GPT) | Yes | **Yes (via OpenRouter)** |
+| OpenRouter | No | **Yes (400+ models, many free)** |
+| Ollama (local) | No | **Yes (Llama, Mistral, Qwen — fully offline)** |
+| Claude Code CLI | Via Claude Max | **Yes (free AI backend with Max subscription)** |
+| MiniMax | Community | **Yes (via OpenRouter)** |
+| Google Gemini | No | **Yes (via OpenRouter)** |
+| DeepSeek | No | **Yes (via OpenRouter — free)** |
+| Provider Fallback | Manual | **Automatic cascade: Anthropic → OpenRouter → Ollama** |
+| Cost Intelligence | No | **ROI tracking + budget forecasting + burn prediction** |
+
+#### Tools & Capabilities
+
+| Capability | OpenClaw | **ClawdAgent** |
+|-----------|----------|----------------|
+| Built-in Tools | ~15 | **29 integrated tools** |
+| Pre-loaded Skills | Community-driven | **74 skills out of the box (crypto, dev, security, docs, research, AI)** |
+| Browser Automation | Yes (Playwright) | **Yes (headless Playwright + AI vision)** |
+| Server Management | Shell commands | **Multi-server SSH + Docker ops + health monitoring + auto-discovery** |
+| Crypto Trading | No | **5 strategies (DCA, Scalping, Swing, Day Trading, Custom) + TA engine + risk manager** |
+| Social Publishing | No | **9 platforms (Twitter, IG, TikTok, LinkedIn, YT, FB, Threads, BlueSky, Pinterest)** |
+| AI Video Generation | No | **Kie.ai (60+ models) + fal.ai (FLUX, Kling, Wan, Stable Diffusion)** |
+| AI Image Generation | Via skill | **fal.ai (FLUX, SD) + Kie.ai** |
+| Desktop Control | Mac (Accessibility) | **AI vision + mouse/keyboard (cross-platform)** |
+| Mobile Automation | No | **Android via ADB/Appium with pre-built recipes** |
+| Email | Gmail via skill | **Gmail API + SMTP dual integration (native)** |
+| Voice (TTS/STT) | ElevenLabs | **ElevenLabs (native integration)** |
+| Calendar | Google Calendar | **Google Calendar (native integration)** |
+| Code Execution | Claude Code sessions | **Bash tool + GitHub tool + Code Assistant agent** |
+| RAG (Document Q&A) | No | **Vector embeddings + keyword hybrid search** |
+| Queue System | No | **BullMQ (4 job types, 5 parallel, 20 queue)** |
+| Cron Scheduling | Yes | **Yes (built-in + timezone-aware + Web UI)** |
+
+#### Deployment & Operations
+
+| Feature | OpenClaw | **ClawdAgent** |
+|---------|----------|----------------|
+| Install Complexity | 1-liner (npm) | **1-liner (`bash install.sh`) + interactive wizard** |
+| OS Support | Mac, Windows, Linux | **Mac, Windows, Linux (+ Docker)** |
+| Production Stack | PM2 / Docker | **PM2 + Docker + nginx + PostgreSQL + Redis** |
+| Database | SQLite | **PostgreSQL 15+ (enterprise-grade)** |
+| Caching Layer | No | **Redis 7+ (BullMQ queues + session cache)** |
+| Observability | Logs | **Timeline events + tool heatmaps + error clustering + cost tracker** |
+| Self-Repair | No | **9 known fix patterns + AI diagnosis** |
+| Config Management | .env + YAML | **Zod-validated .env + YAML hot-reload + Web UI settings** |
+| Scaling | Single instance | **Horizontal via Docker + queue workers** |
+| API Endpoints | Webhooks | **Full REST API (17 routes) + WebSocket + A2A + ACP** |
+
+#### Community & Ecosystem
+
+| Metric | OpenClaw | **ClawdAgent** |
+|--------|----------|----------------|
+| License | MIT | **Apache 2.0 (patent + trademark protection)** |
+| Age | ~2 months | **6 months (v6.1)** |
+| Codebase | ~10K lines | **28,500+ lines TypeScript** |
+| Modules | ~20 | **51 core modules** |
+| Protocol Support | MCP (partial) | **MCP + A2A + ACP (full compliance)** |
+| Target User | Mac power users | **Developers, DevOps, traders, teams, enterprises** |
+| Self-Hosting | Required | **Required (+ Docker one-command)** |
+| Extensibility | Skills (JavaScript) | **Skills (JSON) + Plugins (manifest) + Tools (TypeScript) + Agents (prompt)** |
+
+> **Bottom line**: OpenClaw is an excellent personal AI assistant for Mac users who want quick automation via chat. ClawdAgent is an **autonomous AI operations center** — a full-stack, multi-agent, self-evolving system with enterprise-grade security, crypto trading, social publishing, 4 AI providers, 3 agent protocols, and a complete React dashboard. If OpenClaw is a smart personal assistant, ClawdAgent is an **AI department**.
+
 ---
 
 ## Features
@@ -201,6 +390,35 @@ ClawdAgent: ✅ Generated script with AI → created video via Kie.ai
 - **WhatsApp** — WhatsApp Web integration with QR pairing
 - **Web Dashboard** — React app with real-time WebSocket (Dashboard, Chat, Agents, Tasks, Cron, Servers, Trading, Skills, Knowledge, Intelligence, Graph, Logs, Costs, Settings, History, OpenClaw)
 - **Agent Protocols** — A2A + ACP for agent-to-agent communication
+
+### What ClawdAgent Connects To — 60+ Integrations
+
+ClawdAgent connects to virtually everything. Every integration is built-in or one config line away:
+
+| Category | Services & Platforms |
+|----------|---------------------|
+| **Chat Platforms** | Telegram, Discord, WhatsApp, Web Dashboard (+ A2A/ACP for any agent) |
+| **AI Providers** | Anthropic Claude 4.6, OpenRouter (400+ models), Ollama (local), Claude Code CLI, DeepSeek, Gemini, GPT-4o, Mistral, Llama, Qwen |
+| **Social Media** | Twitter/X, Instagram, TikTok, LinkedIn, YouTube, Facebook, Threads, BlueSky, Pinterest (via Blotato) |
+| **AI Generation** | fal.ai (FLUX, Stable Diffusion, Kling, Wan), Kie.ai (60+ models: video, image, music, voice) |
+| **Code & DevOps** | GitHub (PRs, issues, repos), Docker, SSH (multi-server), PM2, nginx, CI/CD |
+| **Databases** | PostgreSQL, Redis, SQLite, any SQL via Drizzle ORM |
+| **Email** | Gmail API, SMTP (any provider), Nodemailer |
+| **Calendar** | Google Calendar (events, scheduling, reminders) |
+| **Voice** | ElevenLabs (TTS, STT, voice cloning) |
+| **Browser** | Playwright (headless automation, form filling, scraping, screenshots) |
+| **Crypto** | Binance, Bybit, Coinbase, Kraken, KuCoin + 100 exchanges via CCXT |
+| **Search** | Brave Search, Firecrawl (web scraping), Apify (data extraction), RapidAPI (1000s of APIs) |
+| **Documents** | PDF parsing, DOCX/Word (Mammoth), Excel/XLSX, YAML, JSON |
+| **Media** | Sharp (image processing), QR codes, screenshots, video processing |
+| **Mobile** | Android via ADB/Appium (app control, SMS, calls, notifications) |
+| **Desktop** | AI vision + mouse/keyboard automation (cross-platform) |
+| **Remote Agents** | OpenClaw Bridge (Ed25519 device auth), MCP servers (9), A2A, ACP |
+| **Monitoring** | Server health checks, SSL cert monitoring, disk/CPU/RAM alerts, uptime tracking |
+| **Scheduling** | node-cron (timezone-aware), BullMQ (delayed jobs), recurring workflows |
+| **Security** | Helmet, bcrypt, JWT, Zod validation, SHA-256 integrity, AES encryption |
+
+> **If it has an API, ClawdAgent can talk to it.** And if it doesn't have a tool yet, ClawdAgent can **create one at runtime**.
 
 ### Self-Evolution — The Agent That Improves Itself
 - **Evolution Engine** — Autonomous capability improvement cycles
@@ -550,6 +768,27 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 - **4 AI Provider Modes** — Anthropic direct, OpenRouter (400+ models), Ollama (local), Claude Code CLI
 - **Improved WhatsApp** — Auto-poll verification, better session management
 - **Security Hardening** — Fail-closed governance, message guard, skill scanner, tool integrity checks
+
+---
+
+## Real-World Use Cases
+
+ClawdAgent isn't a toy — it's a production system. Here's what people use it for:
+
+| Use Case | How It Works |
+|----------|-------------|
+| **24/7 DevOps** | SSH into servers, restart services, check logs, monitor health, renew SSL certs, alert on issues — all automatic |
+| **Crypto Trading** | 5 strategies (DCA, Scalping, Swing, Day Trading, Custom) across 100+ exchanges with risk management and P&L tracking |
+| **Social Media Manager** | Create AI content (video/image/text) and publish to 9 platforms on schedule with engagement tracking |
+| **Personal Assistant** | Manage calendar, send emails, set reminders, answer questions, remember everything — via WhatsApp or Telegram |
+| **Code Assistant** | Write code, create PRs, review changes, run tests, debug issues — orchestrated by Claude Code |
+| **Research Analyst** | Deep web research, competitor analysis, market reports, saved to knowledge base with RAG |
+| **Server Fleet Management** | Monitor multiple servers, auto-fix common issues, Docker management, health dashboards |
+| **Content Pipeline** | Generate scripts → create videos → make thumbnails → publish everywhere → track performance |
+| **Mobile Automation** | Control Android apps, automate workflows, handle SMS/calls, manage notifications |
+| **Browser Automation** | Fill forms, scrape data, take screenshots, navigate workflows — headless on servers |
+| **Business Intelligence** | Cost tracking, ROI analysis, budget forecasting, agent performance metrics |
+| **Team Coordination** | Multi-agent crews collaborate on complex tasks, with governance and approval gates |
 
 ---
 
