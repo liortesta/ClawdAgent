@@ -160,7 +160,13 @@
       "Bash(chmod 600 /swapfile2)",
       "Bash(mkswap /swapfile2)",
       "Bash(swapon /swapfile2)",
-      "Bash(swapon --show)"
+      "Bash(swapon --show)",
+      "Bash(time CLAUDECODE= claude -p \"respond with just the word OK\" --output-format json)",
+      "Bash(CLAUDECODE= timeout 60 claude -p \"say OK\" --output-format json)",
+      "Bash(CLAUDECODE= claude -p \"say OK\" --output-format json --max-turns 1)",
+      "Bash(kill 1679682 1664080 1699176)",
+      "Bash(pm2 list)",
+      "Bash(git status -u)"
     ],
     "deny": [
       "Bash(rm -rf /)",

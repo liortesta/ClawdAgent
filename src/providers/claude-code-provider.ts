@@ -120,12 +120,17 @@ function spawnClaude(
   });
 }
 
+/** How long to wait before retrying after a failure (5 minutes) */
+const CLI_RECOVERY_MS = 5 * 60 * 1000;
+
 export class ClaudeCodeProvider {
-  private available: boolean = false;
+  available: boolean = false;
   private authenticated: boolean = false;
   private cliPath: string;
   private cliEntryPoint: string | null = null;
   private lastCheckAt: number = 0;
+  private lastFailureAt: number = 0;
+  private wasAvailableBeforeFailure: boolean = false;
 
   constructor(cliPath: string = 'claude') {
     this.cliPath = cliPath;
@@ -193,6 +198,16 @@ export class ClaudeCodeProvider {
     temperature?: number;
     model?: string;
   }): Promise<ClaudeCodeResponse> {
+    // Auto-recover after CLI_RECOVERY_MS if it was previously working
+    if (!this.available && this.wasAvailableBeforeFailure && this.lastFailureAt > 0) {
+      if (Date.now() - this.lastFailureAt > CLI_RECOVERY_MS) {
+        logger.info('Claude Code CLI auto-recovery — retrying after cooldown');
+        this.available = true;
+        this.authenticated = true;
+        this.lastFailureAt = 0;
+      }
+    }
+
     if (!this.available || !this.authenticated) {
       throw new Error('Claude Code CLI not available or not authenticated');
     }
@@ -279,18 +294,22 @@ EXAMPLES of what to do:
       const stderrMsg = (err.stderr || '').toLowerCase();
       
       // Detect authentication/token issues
-      if (errorMsg.includes('not authenticated') || errorMsg.includes('login') || 
+      if (errorMsg.includes('not authenticated') || errorMsg.includes('login') ||
           errorMsg.includes('authentication expired') || errorMsg.includes('token') ||
           stderrMsg.includes('not authenticated') || stderrMsg.includes('login')) {
+        this.wasAvailableBeforeFailure = true;
+        this.lastFailureAt = Date.now();
         this.authenticated = false;
-        this.available = false; // Mark as unavailable temporarily
+        this.available = false;
         throw new Error('Claude Code CLI: authentication expired or no tokens. Falling back to other providers.');
       }
-      
+
       // Detect exit code 1 (usually means no tokens or auth failure)
       if (errorMsg.includes('exited with code 1') || errorMsg.includes('exited with code') && errorMsg.includes('1')) {
+        this.wasAvailableBeforeFailure = true;
+        this.lastFailureAt = Date.now();
         this.authenticated = false;
-        this.available = false; // Mark as unavailable temporarily
+        this.available = false;
         throw new Error('Claude Code CLI: no tokens available or authentication failed. Falling back to other providers.');
       }
       
@@ -300,8 +319,10 @@ EXAMPLES of what to do:
       
       // Generic error - mark as unavailable if it's a critical failure
       if (errorMsg.includes('exited with code') && !errorMsg.includes('0')) {
-        logger.warn('Claude Code CLI failed with non-zero exit code, marking as temporarily unavailable', { error: err.message });
-        this.available = false; // Temporarily mark as unavailable
+        logger.warn('Claude Code CLI failed with non-zero exit code, marking as temporarily unavailable (auto-recovers in 5min)', { error: err.message });
+        this.wasAvailableBeforeFailure = true;
+        this.lastFailureAt = Date.now();
+        this.available = false;
       }
       
       throw new Error(`Claude Code CLI error: ${err.message}`);

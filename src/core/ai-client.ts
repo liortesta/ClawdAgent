@@ -849,8 +849,10 @@ ${toolList}`;
 }
 
 // ── Free OpenRouter models for 402 (insufficient credits) fallback ───
-/** Track if OpenRouter has no credits — skip entirely until restart */
+/** Track if OpenRouter has no credits — skip temporarily (auto-resets after 10 minutes) */
 let openRouterNoCredits = false;
+let openRouterNoCreditsTimestamp = 0;
+const OPENROUTER_CREDIT_RETRY_MS = 10 * 60 * 1000; // 10 minutes
 
 const FREE_FALLBACK_MODELS = [
   'z-ai/glm-4.5-air',                                    // NEW: best free agentic model
@@ -1042,15 +1044,23 @@ export class AIClient {
         if (!provider) continue;
 
         // Skip provider if it's marked as unavailable (e.g., Claude Code CLI with no tokens)
-        if ('available' in provider && provider.available === false) {
+        // Note: Claude Code CLI handles its own auto-recovery in chat(), so let it through
+        if (providerName !== 'claude-code' && 'available' in provider && provider.available === false) {
           logger.debug(`Skipping ${providerName} - marked as unavailable`);
           continue;
         }
 
         // Skip OpenRouter entirely when we know it has no credits (paid + free both failed)
+        // Auto-reset after 10 minutes so the system recovers if credits are added
         if (providerName === 'openrouter' && openRouterNoCredits) {
-          logger.debug('Skipping openrouter — no credits (cached)');
-          continue;
+          if (Date.now() - openRouterNoCreditsTimestamp > OPENROUTER_CREDIT_RETRY_MS) {
+            openRouterNoCredits = false;
+            openRouterNoCreditsTimestamp = 0;
+            logger.info('OpenRouter no-credits flag reset — retrying');
+          } else {
+            logger.debug('Skipping openrouter — no credits (cached, resets in ' + Math.round((OPENROUTER_CREDIT_RETRY_MS - (Date.now() - openRouterNoCreditsTimestamp)) / 1000) + 's)');
+            continue;
+          }
         }
 
         // Smart model swapping per provider — always use strong models on fallback
@@ -1131,9 +1141,10 @@ export class AIClient {
                 logger.warn(`Free model ${freeModel} also failed`, { error: freeError.message });
               }
             }
-            // If all free models failed — mark OpenRouter as broken (no credits at all)
-            logger.warn('All OpenRouter free models failed — disabling OpenRouter until restart');
+            // If all free models failed — mark OpenRouter as broken (auto-resets after 10 min)
+            logger.warn('All OpenRouter free models failed — disabling OpenRouter for 10 minutes');
             openRouterNoCredits = true;
+            openRouterNoCreditsTimestamp = Date.now();
             lastError = error;
             continue;
           }
