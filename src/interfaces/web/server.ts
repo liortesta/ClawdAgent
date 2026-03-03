@@ -32,6 +32,16 @@ import { setupA2ARoutes, setupACPRoutes, setupAgentCardRoute } from './routes/a2
 import { setupBrowserRoutes } from './routes/browser-api.js';
 import { setupFacebookRoutes } from './routes/facebook-api.js';
 import { setupFacebookAgentRoutes } from './routes/facebook-agent-api.js';
+import { setupTwitterRoutes } from './routes/twitter-api.js';
+import { setupTwitterAgentRoutes } from './routes/twitter-agent-api.js';
+import { setupLinkedInRoutes } from './routes/linkedin-api.js';
+import { setupLinkedInAgentRoutes } from './routes/linkedin-agent-api.js';
+import { setupTikTokRoutes } from './routes/tiktok-api.js';
+import { setupTikTokAgentRoutes } from './routes/tiktok-agent-api.js';
+import { setupVoiceAgentRoutes } from './routes/voice-agent-api.js';
+import { setupMobileAgentRoutes } from './routes/mobile-agent-api.js';
+import { setupTerminalRoutes } from './routes/terminal-api.js';
+import { setupDeployRoutes } from './routes/deploy-api.js';
 import { BrowserSessionManager } from '../../actions/browser/session-manager.js';
 import { getAllModels } from '../../core/model-router.js';
 import { resolve as resolvePath } from 'path';
@@ -70,6 +80,15 @@ export class WebServer extends BaseInterface {
       const vncMatch = url.match(/^\/browser-vnc\/([a-f0-9-]+)/);
       if (vncMatch) {
         this.handleVncUpgrade(vncMatch[1], req, socket, head);
+        return;
+      }
+
+      // Voice stream: /voice-stream — Twilio media stream ↔ OpenAI Realtime bridge
+      if (url.startsWith('/voice-stream')) {
+        this.wss.handleUpgrade(req, socket, head, async (ws) => {
+          const { TwilioVoiceAgent } = await import('../../actions/voice/twilio-voice-agent.js');
+          TwilioVoiceAgent.getInstance().handleMediaStream(ws as any);
+        });
         return;
       }
 
@@ -242,6 +261,19 @@ export class WebServer extends BaseInterface {
     // ── Facebook Account routes ──────────────────────────────────────────────
     this.app.use('/api/facebook', authMiddleware, setupFacebookRoutes());
     this.app.use('/api/facebook-agent', authMiddleware, setupFacebookAgentRoutes());
+    this.app.use('/api/twitter', authMiddleware, setupTwitterRoutes());
+    this.app.use('/api/twitter-agent', authMiddleware, setupTwitterAgentRoutes());
+    this.app.use('/api/linkedin', authMiddleware, setupLinkedInRoutes());
+    this.app.use('/api/linkedin-agent', authMiddleware, setupLinkedInAgentRoutes());
+    this.app.use('/api/tiktok', authMiddleware, setupTikTokRoutes());
+    this.app.use('/api/tiktok-agent', authMiddleware, setupTikTokAgentRoutes());
+    // ── Voice Agent routes (webhook endpoints are NOT behind auth — Twilio needs access) ──
+    this.app.use('/api/voice-agent', setupVoiceAgentRoutes());
+    this.app.use('/api/mobile-agent', authMiddleware, setupMobileAgentRoutes());
+    // ── SSH Terminal routes ──────────────────────────────────────────────
+    this.app.use('/api/terminal', authMiddleware, setupTerminalRoutes());
+    // ── Deploy routes — agent can deploy built apps to web-accessible directories ──
+    this.app.use('/api/deploy', authMiddleware, setupDeployRoutes());
     // Serve noVNC static files (HTML5 VNC client)
     this.app.use('/novnc', express.static('/usr/share/novnc'));
 

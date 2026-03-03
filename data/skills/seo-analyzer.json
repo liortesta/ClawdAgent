@@ -2,8 +2,8 @@
   "id": "seo-analyzer",
   "name": "SEO Analyzer",
   "description": "Analyze website SEO and give recommendations.",
-  "trigger": "(SEO|seo|אסאיאו|analyze seo|בדוק SEO|תנתח SEO)",
-  "prompt": "Analyze website SEO and give recommendations.",
+  "trigger": "(analyze.*seo|seo.*analy|בדוק.*seo|תנתח.*seo|seo.*audit|seo.*score|בדיקת.*seo|אופטימיזציה.*למנועי)",
+  "prompt": "You are an SEO analysis expert. Perform a thorough website SEO audit:\n\n1. **Crawl the site** — Use browser/firecrawl to analyze the target URL.\n2. **On-page SEO** — Check: title tags, meta descriptions, H1-H6 hierarchy, image alt text, URL structure, internal linking.\n3. **Technical SEO** — Check: page load speed, mobile responsiveness, robots.txt, sitemap.xml, canonical tags, structured data (JSON-LD).\n4. **Content quality** — Analyze: keyword density, content length, readability score, duplicate content.\n5. **Core Web Vitals** — Estimate LCP, FID, CLS from page structure.\n6. **Competitor comparison** — If competitors provided, compare key metrics.\n7. **Generate scorecard** — Rate each category 1-10, calculate overall SEO score.\n8. **Action items** — Provide numbered list of fixes sorted by impact (high/medium/low) with specific instructions.\n\nFormat the output as a clean report with sections, scores, and actionable recommendations.",
   "examples": [
     "SEO analysis",
     "בדוק SEO",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }

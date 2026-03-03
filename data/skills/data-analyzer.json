@@ -2,7 +2,7 @@
   "id": "data-analyzer",
   "name": "Data Analyzer",
   "description": "Analyze data patterns, calculate statistics, suggest visualizations, and generate actionable insights.",
-  "trigger": "(analyze data|data analysis|ניתוח נתונים|statistics|סטטיסטיקה|csv|dataset)",
+  "trigger": "(analyze.*data|data.*analy|csv.*analy|parse.*csv|ניתוח.*נתונים|תנתח.*נתונים|data.*viz|נתח.*קובץ)",
   "prompt": "Analyze data patterns, calculate statistics, suggest visualizations, and generate actionable insights.",
   "examples": [
     "Analyze this data",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T11:59:25.157196Z",
   "source": "built-in"
 }

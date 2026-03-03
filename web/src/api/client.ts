@@ -215,6 +215,7 @@ export const api = {
   fbAgentUpdateConfig: (accountId: string, config: any) => apiRequest<{ ok: boolean; config: any }>(`/facebook-agent/agents/${accountId}/config`, { method: 'PUT', body: JSON.stringify(config) }),
   fbAgentLogs: (accountId: string, limit?: number) => apiRequest<{ logs: any[] }>(`/facebook-agent/agents/${accountId}/logs?limit=${limit || 50}`),
 
-  // Generic GET
+  // Generic helpers
   get: <T = any>(path: string) => apiRequest<T>(path),
+  post: <T = any>(path: string, body?: any) => apiRequest<T>(path, { method: 'POST', body: body != null ? JSON.stringify(body) : undefined }),
 };

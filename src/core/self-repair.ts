@@ -122,8 +122,50 @@ export class SelfRepair {
   private errorLog: ErrorRecord[] = [];
   private readonly ERROR_WINDOW_MS = 60 * 60 * 1000; // 1 hour window
 
+  // Circuit breaker: silence issues that fail repeatedly to prevent log spam
+  private issueFailCount: Map<string, number> = new Map();
+  private issueSilencedUntil: Map<string, number> = new Map();
+  private static readonly MAX_CONSECUTIVE_FAILURES = 3;
+  private static readonly SILENCE_DURATION_MS = 60 * 60 * 1000; // 1 hour silence
+
   constructor(meta: MetaAgent) {
     this.meta = meta;
+  }
+
+  /** Normalize issue string to a stable key for circuit breaker tracking */
+  private issueKey(issue: string): string {
+    // Collapse varying numbers (e.g. "Running for 56h" vs "Running for 57h") into a stable key
+    return issue.replace(/\d+/g, 'N').toLowerCase().trim();
+  }
+
+  /** Check if an issue is currently silenced by the circuit breaker */
+  private isSilenced(issue: string): boolean {
+    const key = this.issueKey(issue);
+    const until = this.issueSilencedUntil.get(key);
+    if (!until) return false;
+    if (Date.now() < until) return true;
+    // Silence expired — reset
+    this.issueSilencedUntil.delete(key);
+    this.issueFailCount.delete(key);
+    return false;
+  }
+
+  /** Record a failure and potentially silence the issue */
+  private recordFailure(issue: string): void {
+    const key = this.issueKey(issue);
+    const count = (this.issueFailCount.get(key) || 0) + 1;
+    this.issueFailCount.set(key, count);
+    if (count >= SelfRepair.MAX_CONSECUTIVE_FAILURES) {
+      this.issueSilencedUntil.set(key, Date.now() + SelfRepair.SILENCE_DURATION_MS);
+      logger.info(`Self-repair: circuit breaker — silencing "${key}" for 1h after ${count} consecutive failures`);
+    }
+  }
+
+  /** Record a success and reset the circuit breaker for this issue */
+  private recordSuccess(issue: string): void {
+    const key = this.issueKey(issue);
+    this.issueFailCount.delete(key);
+    this.issueSilencedUntil.delete(key);
   }
 
   /** Track an error for frequency analysis */
@@ -156,6 +198,12 @@ export class SelfRepair {
       const issue = diagnosis.issues[i];
       const suggestedFix = diagnosis.fixes[i] ?? 'No fix available';
 
+      // Circuit breaker: skip issues that have failed too many times
+      if (this.isSilenced(issue)) {
+        logger.debug('Self-repair: skipping silenced issue', { issue });
+        continue;
+      }
+
       logger.warn('Self-repair: attempting fix', { issue, suggestedFix });
 
       try {
@@ -176,13 +224,16 @@ export class SelfRepair {
 
         if (success) {
           repaired.push(issue);
+          this.recordSuccess(issue);
           logger.info('Self-repair: fixed!', { issue });
         } else {
           failed.push(issue);
+          this.recordFailure(issue);
           logger.error('Self-repair: failed', { issue });
         }
       } catch (error: any) {
         failed.push(issue);
+        this.recordFailure(issue);
         this.repairHistory.push({ timestamp: new Date(), issue, action: suggestedFix, success: false });
         logger.error('Self-repair: error', { issue, error: error.message });
       }

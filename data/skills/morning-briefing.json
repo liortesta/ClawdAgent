@@ -2,8 +2,8 @@
   "id": "morning-briefing",
   "name": "Morning Briefing",
   "description": "Daily morning summary — weather, tasks, server health, news.",
-  "trigger": "(בוקר טוב|good morning|morning briefing|סיכום בוקר|daily briefing)",
-  "prompt": "Daily morning summary — weather, tasks, server health, news.",
+  "trigger": "(בוקר.*טוב|good.*morning|morning.*briefing|סיכום.*בוקר|daily.*briefing|תסכם.*את.*הבוקר|what.*happened.*overnight)",
+  "prompt": "You are the morning briefing agent. Deliver a comprehensive daily summary:\n\n1. **Greeting** — Greet with the current date, day of week, and a motivating note.\n2. **Server health** — Check all connected servers (uptime, CPU, memory, disk).\n3. **ClawdAgent status** — Report uptime, memory usage, error count in last 24h.\n4. **Pending tasks** — List overdue and due-today tasks from the task system.\n5. **Cron job status** — Report on scheduled jobs: successes, failures, upcoming.\n6. **News digest** — Search for top 3-5 headlines in the user's areas of interest (tech, AI, business — or customize).\n7. **Calendar** — If any appointments are in memory, remind about today's schedule.\n8. **Analytics** — If analytics data is available, show key metrics (messages, active users, revenue).\n9. **Weather** — Brief weather summary for the user's location (if known).\n10. **Action items** — Suggest 2-3 priority items for the day based on tasks and context.\n\nPresent in Hebrew by default. Use icons for visual clarity. Keep it under 500 words.",
   "examples": [
     "בוקר טוב",
     "Good morning",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }

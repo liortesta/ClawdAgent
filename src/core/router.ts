@@ -54,6 +54,7 @@ export enum Intent {
   BUILD_APP = 'build_app',
   MRR_STRATEGY = 'mrr_strategy',
   FACEBOOK_ACTION = 'facebook_action',
+  VOICE_CALL = 'voice_call',
 }
 
 export interface RoutingResult {
@@ -116,6 +117,7 @@ Available intents:
 - server_scan: Scan/discover what's on a server — capabilities, tools, projects, databases — תסרוק שרת, scan server, מה יש בשרת, what's on the server, discover, תגלה מה רץ, /server scan
 - whatsapp_connect: Connect WhatsApp, get QR code, check WhatsApp status — חבר ווטסאפ, התחבר לוואטסאפ, QR, קוד QR, whatsapp connect, whatsapp status, link whatsapp
 - facebook_action: Facebook account management, autonomous Facebook agent, post to Facebook, Facebook automation, manage Facebook accounts — תפרסם בפייסבוק, תפעיל אייג'נט פייסבוק, חשבון פייסבוק, facebook agent, פייסבוק אוטומטי, תעשה פוסט בפייסבוק, תנהל פייסבוק
+- voice_call: Make voice calls, AI phone agent, call someone, check call history, voice agent — תתקשר ל, שיחת טלפון, תטלפן, call history, voice agent, AI voice, twilio call
 
 Hebrew examples:
 - "מה מצב השרת" → server_status
@@ -181,11 +183,15 @@ Hebrew examples:
 - "facebook accounts" → facebook_action
 - "מה קורה בפייסבוק" → facebook_action
 - "תנהל את הפייסבוק" → facebook_action
+- "תתקשר ל-050-1234567" → voice_call
+- "מי התקשר" → voice_call
+- "call +972501234567" → voice_call
+- "voice agent status" → voice_call
 
 Respond ONLY with valid JSON (no markdown, no text before/after):
 {"intent":"<intent_name>","confidence":<0.0-1.0>,"agent":"<best_agent>","params":{"key":"value"}}
 
-Agent options: server-manager, code-assistant, researcher, task-planner, general, desktop-controller, project-builder, web-agent, content-creator, orchestrator, device-controller, crypto-trader, crypto-analyst, ai-app-builder, mrr-strategist
+Agent options: server-manager, code-assistant, researcher, task-planner, general, desktop-controller, project-builder, web-agent, content-creator, orchestrator, device-controller, crypto-trader, crypto-analyst, ai-app-builder, mrr-strategist, voice-agent
 
 For ugc_create and podcast_create → use content-creator agent.
 For site_analyze → use orchestrator agent.
@@ -194,7 +200,8 @@ For crypto_trade → use crypto-trader agent.
 For crypto_analyze → use crypto-analyst agent.
 For crypto_portfolio → use crypto-trader agent.
 For whatsapp_connect → use general agent.
-For facebook_action → use web-agent agent.`;
+For facebook_action → use web-agent agent.
+For voice_call → use voice-agent agent.`;
 
 export class IntentRouter {
   private ai: AIClient;
@@ -348,6 +355,11 @@ export class IntentRouter {
     // Help
     if (/מה.*יכול|what.*can.*you|עזרה|help/i.test(message)) {
       return { intent: Intent.HELP, confidence: 0.8, agentId: 'general', extractedParams: {} };
+    }
+
+    // Voice calls — AI phone agent
+    if (/תתקשר\s*ל|תטלפן|שיחת\s*טלפון|call\s+\+?\d|voice\s*agent|call\s*history|מי\s*התקשר|היסטוריית\s*שיחות|make.*call|outbound.*call|inbound.*call/i.test(message)) {
+      return { intent: Intent.VOICE_CALL, confidence: 0.9, agentId: 'voice-agent', extractedParams: {} };
     }
 
     // Device control

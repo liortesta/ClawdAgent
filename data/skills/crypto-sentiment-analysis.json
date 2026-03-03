@@ -2,7 +2,7 @@
   "id": "crypto-sentiment-analysis",
   "name": "Crypto Sentiment Analysis",
   "description": "Analyze market sentiment from multiple sources: Fear & Greed Index, Reddit/Twitter social signals, funding rates, long/short ratios, and news sentiment.",
-  "trigger": "(sentiment|סנטימנט|fear.*greed|פחד.*חמדנות|social.*signal|reddit.*crypto|twitter.*crypto|funding.*rate|long.*short.*ratio|market.*mood|מצב.*רוח.*שוק|crypto.*news|חדשות.*קריפטו|hype|FOMO|FUD)",
+  "trigger": "(crypto.*sentiment|sentiment.*crypto|crypto.*hype|market.*mood|צפי.*שוק|ניתוח.*סנטימנט|fear.*greed|social.*sentiment)",
   "prompt": "Analyze market sentiment from multiple sources: Fear & Greed Index, Reddit/Twitter social signals, funding rates, long/short ratios, and news sentiment. Generate sentiment-based trading signals with confidence scores.",
   "examples": [
     "Market sentiment now",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T11:59:25.157196Z",
   "source": "built-in"
 }

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apps — ClawdAgent</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; padding: 2rem; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #58a6ff; }
+    .subtitle { color: #8b949e; margin-bottom: 2rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1.5rem; transition: border-color 0.2s; }
+    .card:hover { border-color: #58a6ff; }
+    .card a { color: #58a6ff; text-decoration: none; font-size: 1.2rem; font-weight: 600; }
+    .card a:hover { text-decoration: underline; }
+    .card .url { color: #8b949e; font-size: 0.85rem; margin-top: 0.5rem; direction: ltr; text-align: left; }
+    .empty { color: #8b949e; font-style: italic; }
+    .back { display: inline-block; margin-top: 2rem; color: #58a6ff; text-decoration: none; }
+    .back:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>Apps</h1>
+  <p class="subtitle">אפליקציות וכלים שנבנו ע"י ClawdAgent</p>
+  <div class="grid" id="list"></div>
+  <a class="back" href="/">← חזרה לדשבורד</a>
+  <script>
+    fetch('/api/deploy/list').then(r => {
+      if (!r.ok) throw new Error('Not authenticated');
+      return r.json();
+    }).then(data => {
+      const el = document.getElementById('list');
+      const apps = data.apps.filter(a => a.target === 'apps');
+      if (apps.length === 0) {
+        el.innerHTML = '<p class="empty">אין עדיין אפליקציות. בקש מהסוכן לבנות אחת!</p>';
+        return;
+      }
+      el.innerHTML = apps.map(p =>
+        `<div class="card"><a href="${p.url}" target="_blank">${p.name}</a><div class="url">${p.url}</div></div>`
+      ).join('');
+    }).catch(() => {
+      document.getElementById('list').innerHTML = '<p class="empty">התחבר לדשבורד כדי לראות את רשימת האפליקציות</p>';
+    });
+  </script>
+</body>
+</html>

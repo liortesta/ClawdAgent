@@ -567,6 +567,8 @@ Rules:
         body: errMsg,
         severity: 'warning',
         source: 'system',
+        actionUrl: '/cron',
+        metadata: { taskId: task.id, taskName: task.name, status: 'failed' },
       });
       await notificationStore.flush();
       throw new Error(errMsg);
@@ -591,11 +593,44 @@ Rules:
       body: `Content: ${content.slice(0, 150)}${content.length > 150 ? '...' : ''}\n\nPlatforms: ${platforms.join(', ')}\n${publishSummary}`,
       severity: result.success ? 'success' : 'warning',
       source: 'system',
+      actionUrl: '/cron',
+      metadata: { taskId: task.id, taskName: task.name, platforms, fullContent: content, publishResult: publishSummary, status: result.success ? 'published' : 'failed' },
     });
     await notificationStore.flush();
 
     logger.info('ai_publish: done', { taskId: task.id, success: result.success });
     return `Published to ${platforms.join(', ')}:\n${content.slice(0, 200)}`;
+  });
+
+  // Twitter/LinkedIn engagement cron actions
+  cronEngine.registerAction('twitter_engage', async (task) => {
+    const { TwitterAgent } = await import('./actions/browser/twitter-agent.js');
+    const { TwitterAccountManager } = await import('./actions/browser/twitter-manager.js');
+    const accountId = task.actionData?.accountId as string;
+    if (!accountId) return 'Error: accountId required in actionData';
+    const account = TwitterAccountManager.getInstance().getAccount(accountId);
+    if (!account) return `Error: Twitter account ${accountId} not found`;
+    const existing = TwitterAgent.getAgent(accountId);
+    if (existing) return 'Agent already running';
+    const config = { accountId, actions: (task.actionData?.actions as string[]) ?? ['like', 'reply'], ...(task.actionData?.config as Record<string, unknown> ?? {}) } as any;
+    const agent = TwitterAgent.createAgent(config);
+    await agent.start();
+    return `Twitter agent started for ${account.name}`;
+  });
+
+  cronEngine.registerAction('linkedin_engage', async (task) => {
+    const { LinkedInAgent } = await import('./actions/browser/linkedin-agent.js');
+    const { LinkedInAccountManager } = await import('./actions/browser/linkedin-manager.js');
+    const accountId = task.actionData?.accountId as string;
+    if (!accountId) return 'Error: accountId required in actionData';
+    const account = LinkedInAccountManager.getInstance().getAccount(accountId);
+    if (!account) return `Error: LinkedIn account ${accountId} not found`;
+    const existing = LinkedInAgent.getAgent(accountId);
+    if (existing) return 'Agent already running';
+    const config = { accountId, actions: (task.actionData?.actions as string[]) ?? ['like', 'comment'], ...(task.actionData?.config as Record<string, unknown> ?? {}) } as any;
+    const agent = LinkedInAgent.createAgent(config);
+    await agent.start();
+    return `LinkedIn agent started for ${account.name}`;
   });
 
   // Register default workflow action handlers
@@ -1012,6 +1047,14 @@ Rules:
       logger.debug('Startup evolution error', { error: err.message });
     }
   }, 5 * 60 * 1000);
+
+  // Restore Facebook agents that were running before last restart
+  try {
+    const { FacebookAgent } = await import('./actions/browser/facebook-agent.js');
+    await FacebookAgent.restoreAgents();
+  } catch (err: any) {
+    logger.debug('Facebook agent restore skipped', { error: err.message });
+  }
 
   logger.info(`✅ ClawdAgent PRODUCTION v${yamlConfig.agent.version} started with ${interfaces.length} interface(s)`, {
     providers: engine.getAIClient().getAvailableProviders(),

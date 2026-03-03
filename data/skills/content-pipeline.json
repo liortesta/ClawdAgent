@@ -2,8 +2,8 @@
   "id": "content-pipeline",
   "name": "Content Pipeline",
   "description": "End-to-end content creation to publish workflow.",
-  "trigger": "(content pipeline|צור ופרסם|create and publish|pipeline|תוכן מלא)",
-  "prompt": "End-to-end content creation to publish workflow.",
+  "trigger": "(content.*pipeline|צור.*ופרסם|create.*and.*publish|content.*to.*publish|תוכן.*מלא|full.*content|end.*to.*end.*content)",
+  "prompt": "You are a full content pipeline manager. Orchestrate end-to-end content creation and publishing:\n\n1. **Content brief** — Define topic, target audience, platform(s), tone, and goals.\n2. **Research** — Search web for trending angles, competitor content, and reference material.\n3. **Generate content** — Create the content using AI:\n   - Blog post: 800-1500 words with SEO optimization\n   - Social posts: Platform-specific formats (Twitter 280 chars, LinkedIn professional, Instagram visual)\n   - Video script: Hook + body + CTA structure\n4. **Create visuals** — Use KIE/fal.ai to generate images, thumbnails, or social cards.\n5. **Review & refine** — Present draft to user for approval. Iterate based on feedback.\n6. **Publish** — Use the social tool to publish to selected platforms (Blotato, direct API).\n7. **Schedule** — If not publishing immediately, create a cron task for scheduled posting.\n8. **Track** — Log what was published, where, and when in memory.\n\nSupport Hebrew and English. Adapt tone per platform automatically.",
   "examples": [
     "Create content pipeline",
     "צור ופרסם תוכן",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }

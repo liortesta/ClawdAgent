@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Super ClawdAgent Bros</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Courier New', monospace; overflow: hidden; }
+  #game-container { border: 3px solid #e94560; box-shadow: 0 0 30px #e94560; }
+  #mobile-controls { display: none; margin-top: 10px; gap: 10px; }
+  .btn { background: rgba(233,69,96,0.8); border: 2px solid #e94560; color: white; padding: 15px 25px; font-size: 20px; border-radius: 8px; cursor: pointer; user-select: none; touch-action: none; }
+  .btn:active { background: #e94560; }
+  @media (max-width: 768px) { #mobile-controls { display: flex; } }
+</style>
+</head>
+<body>
+<div id="game-container"></div>
+<div id="mobile-controls">
+  <button class="btn" id="btn-left">◀</button>
+  <button class="btn" id="btn-jump">▲ JUMP</button>
+  <button class="btn" id="btn-right">▶</button>
+</div>
+<script>
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function getAudio() { if (!audioCtx) audioCtx = new AudioCtx(); return audioCtx; }
+function playTone(freq, type, duration, vol) {
+  vol = vol || 0.3;
+  try {
+    const ctx = getAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(); osc.stop(ctx.currentTime + duration);
+  } catch(e) {}
+}
+function sfxJump()  { playTone(400,'square',0.1); setTimeout(function(){playTone(600,'square',0.1);},80); }
+function sfxCoin()  { playTone(800,'sine',0.05); setTimeout(function(){playTone(1200,'sine',0.1);},60); }
+function sfxDie()   { playTone(300,'sawtooth',0.1); setTimeout(function(){playTone(200,'sawtooth',0.15);},100); setTimeout(function(){playTone(100,'sawtooth',0.3);},250); }
+function sfxKill()  { playTone(200,'square',0.05); setTimeout(function(){playTone(150,'square',0.1);},60); }
+function sfxWin()   { [523,659,784,1047].forEach(function(f,i){setTimeout(function(){playTone(f,'sine',0.2);},i*150);}); }
+
+const W = 800, H = 450;
+const GRAVITY = 900, JUMP_VEL = -500, SPEED = 220;
+const TILE = 32;
+
+const LEVEL = [
+  "                                                                ",
+  "                                                                ",
+  "                                                                ",
+  "                                                                ",
+  "          Q   B Q                  Q   B                      F",
+  "                                                                ",
+  "                  B B B       B B B                             ",
+  "                                                                ",
+  "   E         E              E         E          E              ",
+  "################################################################",
+  "################################################################"
+];
+
+class BootScene extends Phaser.Scene {
+  constructor() { super('BootScene'); }
+  create() {
+    this.add.rectangle(W/2, H/2, W, H, 0x1a1a2e);
+    this.add.text(W/2, H/2-80, 'SUPER CLAWDAGENT BROS', {
+      fontSize: '28px', fill: '#f1c40f', fontFamily: 'Courier New', stroke: '#000', strokeThickness: 4
+    }).setOrigin(0.5);
+    this.add.text(W/2, H/2-20, 'Arrow Keys / WASD to move', {
+      fontSize: '16px', fill: '#fff', fontFamily: 'Courier New'
+    }).setOrigin(0.5);
+    this.add.text(W/2, H/2+20, 'UP / SPACE / W to jump', {
+      fontSize: '16px', fill: '#fff', fontFamily: 'Courier New'
+    }).setOrigin(0.5);
+    this.add.text(W/2, H/2+60, 'Stomp enemies! Hit ? blocks! Reach the flag!', {
+      fontSize: '14px', fill: '#2ecc71', fontFamily: 'Courier New'
+    }).setOrigin(0.5);
+    const s = this.add.text(W/2, H/2+110, 'Press SPACE or tap to start', {
+      fontSize: '18px', fill: '#e94560', fontFamily: 'Courier New'
+    }).setOrigin(0.5);
+    this.tweens.add({ targets: s, alpha: 0.2, duration: 600, yoyo: true, repeat: -1 });
+    this.input.keyboard.once('keydown-SPACE', function(){ this.scene.start('GameScene'); }, this);
+    this.input.once('pointerdown', function(){ this.scene.start('GameScene'); }, this);
+  }
+}
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('GameScene'); }
+
+  create() {
+    this.score = 0;
+    this.lives = 3;
+    this.coins = 0;
+    this.won = false;
+    this.mobileKeys = { left: false, right: false, jump: false };
+    this.jumpPressed = false;
+
+    const levelW = LEVEL[0].length * TILE;
+    const levelH = LEVEL.length * TILE;
+
+    // Sky background
+    const bg = this.add.graphics();
+    bg.fillGradientStyle(0x1a1a2e, 0x1a1a2e, 0x0f3460, 0x0f3460, 1);
+    bg.fillRect(0, 0, levelW, levelH);
+    bg.setScrollFactor(0.2);
+
+    // Stars
+    for (var i = 0; i < 100; i++) {
+      var star = this.add.circle(
+        Phaser.Math.Between(0, levelW),
+        Phaser.Math.Between(0, H * 0.7),
+        Phaser.Math.Between(1, 2), 0xffffff,
+        Phaser.Math.FloatBetween(0.3, 1)
+      );
+      star.setScrollFactor(0.15);
+    }
+
+    // Groups
+    this.platforms = this.physics.add.staticGroup();
+    this.bricks     = this.physics.add.staticGroup();
+    this.qblocks    = this.physics.add.staticGroup();
+    this.coinItems  = this.physics.add.group();
+    this.enemies    = this.physics.add.group();
+
+    this.buildTextures();
+    this.createPlayer();
+    this.parseLevel();
+    this.createHUD();
+    this.setupInput();
+    this.setupMobile();
+
+    // Camera
+    this.cameras.main.setBounds(0, 0, levelW, levelH);
+    this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+    this.physics.world.setBounds(0, 0, levelW, levelH + 200);
+
+    // Colliders
+    this.physics.add.collider(this.player, this.platforms);
+    this.physics.add.collider(this.player, this.bricks, this.onHitBrick, null, this);
+    this.physics.add.collider(this.player, this.qblocks, this.onHitQBlock, null, this);
+    this.physics.add.collider(this.enemies, this.platforms);
+    this.physics.add.collider(this.enemies, this.bricks);
+    this.physics.add.collider(this.enemies, this.qblocks);
+    this.physics.add.overlap(this.player, this.coinItems, this.onCoin, null, this);
+    this.physics.add.overlap(this.player, this.enemies, this.onEnemyContact, null, this);
+    if (this.flagObj) {
+      this.physics.add.overlap(this.player, this.flagObj, this.onFlag, null, this);
+    }
+  }
+
+  buildTextures() {
+    var g = this.add.graphics();
+
+    // Ground tile
+    g.clear();
+    g.fillStyle(0x27ae60); g.fillRect(0,0,TILE,TILE);
+    g.fillStyle(0x2ecc71); g.fillRect(0,0,TILE,6);
+    g.fillStyle(0x1e8449); g.fillRect(0,6,TILE,TILE-6);
+    g.lineStyle(1,0x000,0.2); g.strokeRect(0,0,TILE,TILE);
+    g.generateTexture('ground', TILE, TILE); g.clear();
+
+    // Brick tile
+    g.fillStyle(0xc0392b); g.fillRect(0,0,TILE,TILE);
+    g.fillStyle(0xe74c3c); g.fillRect(1,1,14,14); g.fillRect(17,1,14,14);
+    g.fillRect(1,17,14,14); g.fillRect(17,17,14,14);
+    g.lineStyle(2,0x922b21); g.strokeRect(0,0,TILE,TILE);
+    g.generateTexture('brick', TILE, TILE); g.clear();
+
+    // Question block
+    g.fillStyle(0xf39c12); g.fillRect(0,0,TILE,TILE);
+    g.fillStyle(0xe67e22); g.fillRect(2,2,TILE-4,TILE-4);
+    g.fillStyle(0xf1c40f); g.fillCircle(TILE/2,TILE/2,9);
+    g.fillStyle(0x000); g.fillRect(TILE/2-3,TILE/2-7,6,10); g.fillRect(TILE/2-3,TILE/2+5,6,4);
+    g.generateTexture('qblock', TILE, TILE); g.clear();
+
+    // Used block
+    g.fillStyle(0x7f8c8d); g.fillRect(0,0,TILE,TILE);
+    g.lineStyle(1,0x000,0.3); g.strokeRect(0,0,TILE,TILE);
+    g.generateTexture('usedblock', TILE, TILE); g.clear();
+
+    // Coin
+    g.fillStyle(0xf1c40f); g.fillCircle(TILE/2,TILE/2,11);
+    g.fillStyle(0xe67e22,0.5); g.fillCircle(TILE/2-3,TILE/2-3,5);
+    g.generateTexture('coin', TILE, TILE); g.clear();
+
+    // Enemy (Goomba style)
+    g.fillStyle(0x8B4513); g.fillEllipse(TILE/2,TILE/2+4,TILE-4,TILE-8);
+    g.fillStyle(0xfdbcb4); g.fillEllipse(TILE/2,TILE/2-2,TILE-8,10);
+    g.fillStyle(0xfff); g.fillCircle(TILE/2-6,TILE/2-2,5); g.fillCircle(TILE/2+6,TILE/2-2,5);
+    g.fillStyle(0x000); g.fillCircle(TILE/2-5,TILE/2-2,3); g.fillCircle(TILE/2+7,TILE/2-2,3);
+    g.lineStyle(2,0x000); g.lineBetween(TILE/2-9,TILE/2-8,TILE/2-2,TILE/2-5); g.lineBetween(TILE/2+9,TILE/2-8,TILE/2+2,TILE/2-5);
+    g.generateTexture('enemy', TILE, TILE); g.clear();
+
+    // Player (Mario style)
+    // Hat
+    g.fillStyle(0xe74c3c); g.fillRect(4,0,24,8); g.fillRect(0,8,32,4);
+    // Face
+    g.fillStyle(0xfdbcb4); g.fillRect(4,12,24,12);
+    // Eyes
+    g.fillStyle(0x000); g.fillRect(8,14,4,4); g.fillRect(20,14,4,4);
+    // Mustache
+    g.fillStyle(0x5d4037); g.fillRect(6,20,8,3); g.fillRect(18,20,8,3);
+    // Body
+    g.fillStyle(0x3498db); g.fillRect(4,24,24,12);
+    // Overalls buttons
+    g.fillStyle(0xe74c3c); g.fillRect(6,24,8,8); g.fillRect(18,24,8,8);
+    // Legs
+    g.fillStyle(0x5d4037); g.fillRect(4,36,10,8); g.fillRect(18,36,10,8);
+    // Shoes
+    g.fillStyle(0x000); g.fillRect(2,42,12,6); g.fillRect(18,42,12,6);
+    g.generateTexture('player', TILE, TILE+16); g.clear();
+
+    // Flag pole
+    g.lineStyle(4,0xffffff); g.lineBetween(TILE/2,0,TILE/2,TILE*4);
+    g.fillStyle(0x2ecc71); g.fillTriangle(TILE/2,0,TILE/2+22,12,TILE/2,24);
+    g.generateTexture('flag', TILE, TILE*4); g.clear();
+
+    g.destroy();
+  }
+
+  parseLevel() {
+    for (var row = 0; row < LEVEL.length; row++) {
+      for (var col = 0; col < LEVEL[row].length; col++) {
+        var ch = LEVEL[row][col];
+        var x = col * TILE + TILE/2;
+        var y = row * TILE + TILE/2;
+        if (ch === '#') {
+          var t = this.platforms.create(x, y, 'ground');
+          t.setOrigin(0.5); t.refreshBody();
+        } else if (ch === 'B') {
+          var b = this.bricks.create(x, y, 'brick');
+          b.setOrigin(0.5); b.refreshBody();
+        } else if (ch === 'Q') {
+          var q = this.qblocks.create(x, y, 'qblock');
+          q.setOrigin(0.5); q.refreshBody(); q.hasCoins = true;
+        } else if (ch === 'E') {
+          var e = this.enemies.create(x, y - TILE/2, 'enemy');
+          e.setOrigin(0.5, 1);
+          e.setBounce(0); e.setCollideWorldBounds(false);
+          e.alive = true; e.dir = -1;
+          e.body.setVelocityX(-80);
+        } else if (ch === 'F') {
+          this.flagObj = this.add.image(x, y - TILE*2, 'flag');
+          this.flagObj.setOrigin(0.5);
+          this.physics.add.existing(this.flagObj, true);
+        }
+      }
+    }
+  }
+
+  createPlayer() {
+    var startX = TILE * 2;
+    var startY = (LEVEL.length - 3) * TILE - TILE;
+    this.player = this.physics.add.sprite(startX, startY, 'player');
+    this.player.setOrigin(0.5, 1);
+    this.player.setCollideWorldBounds(true);
+    this.player.setBounce(0);
+    this.player.dead = false;
+    this.player.invincible = false;
+  }
+
+  createHUD() {
+    var s = { fontSize: '16px', fill: '#fff', fontFamily: 'Courier New', stroke: '#000', strokeThickness: 3 };
+    this.hudScore = this.add.text(10, 10, 'SCORE: 0', s).setScrollFactor(0).setDepth(100);
+    this.hudCoins = this.add.text(200, 10, 'COINS: 0', s).setScrollFactor(0).setDepth(100);
+    this.hudLives = this.add.text(350, 10, 'LIVES: 3', s).setScrollFactor(0).setDepth(100);
+    this.add.text(520, 10, 'CLAWDAGENT BROS', {
+      fontSize: '14px', fill: '#f1c40f', fontFamily: 'Courier New', stroke: '#000', strokeThickness: 2
+    }).setScrollFactor(0).setDepth(100);
+  }
+
+  setupInput() {
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd = this.input.keyboard.addKeys({ left:'A', right:'D', up:'W', space:'SPACE' });
+  }
+
+  setupMobile() {
+    var self = this;
+    var btnL = document.getElementById('btn-left');
+    var btnR = document.getElementById('btn-right');
+    var btnJ = document.getElementById('btn-jump');
+    if (!btnL) return;
+    function bind(btn, key) {
+      btn.addEventListener('touchstart', function(e){ e.preventDefault(); self.mobileKeys[key] = true; }, {passive:false});
+      btn.addEventListener('touchend',   function(e){ e.preventDefault(); self.mobileKeys[key] = false; }, {passive:false});
+      btn.addEventListener('mousedown',  function(){ self.mobileKeys[key] = true; });
+      btn.addEventListener('mouseup',    function(){ self.mobileKeys[key] = false; });
+    }
+    bind(btnL, 'left'); bind(btnR, 'right'); bind(btnJ, 'jump');
+  }
+
+  onHitBrick(player, brick) {
+    if (player.body.velocity.y < 0 && player.y > brick.y) {
+      this.spawnParticles(brick.x, brick.y, 0xc0392b, 6);
+      brick.destroy();
+      this.score += 50;
+      this.updateHUD();
+    }
+  }
+
+  onHitQBlock(player, block) {
+    if (player.body.velocity.y < 0 && player.y > block.y && block.hasCoins) {
+      block.hasCoins = false;
+      sfxCoin();
+      this.score += 200; this.coins++;
+      this.updateHUD();
+      this.tweens.add({ targets: block, y: block.y - 10, duration: 80, yoyo: true, onComplete: function(){ block.refreshBody(); } });
+      this.showPopup(block.x, block.y - TILE, '+200', '#f1c40f');
+      this.spawnParticles(block.x, block.y - TILE, 0xf1c40f, 5);
+      block.setTexture('usedblock');
+      block.refreshBody();
+    }
+  }
+
+  onCoin(player, coin) {
+    sfxCoin();
+    this.score += 100; this.coins++;
+    this.updateHUD();
+    this.spawnParticles(coin.x, coin.y, 0xf1c40f, 5);
+    coin.destroy();
+  }
+
+  onEnemyContact(player, enemy) {
+    if (!enemy.alive || player.invincible || player.dead) return;
+    var stomped = player.body.velocity.y > 50 && player.y < enemy.y - enemy.height * 0.3;
+    if (stomped) {
+      sfxKill();
+      enemy.alive = false;
+      this.score += 300;
+      this.updateHUD();
+      player.setVelocityY(-280);
+      this.showPopup(enemy.x, enemy.y - 20, '+300', '#2ecc71');
+      this.spawnParticles(enemy.x, enemy.y, 0x8B4513, 8);
+      var self = this;
+      this.tweens.add({ targets: enemy, scaleY: 0.15, y: enemy.y + 12, duration: 150, onComplete: function(){ enemy.destroy(); } });
+    } else {
+      this.playerHit();
+    }
+  }
+
+  onFlag() {
+    if (this.won) return;
+    this.won = true;
+    sfxWin();
+    this.score += 1000;
+    this.updateHUD();
+    this.player.setVelocityX(0);
+    this.player.setVelocityY(-300);
+    var self = this;
+    this.time.delayedCall(1800, function() { self.showEndScreen(true); });
+  }
+
+  playerHit() {
+    if (this.player.invincible || this.player.dead) return;
+    sfxDie();
+    this.lives--;
+    this.updateHUD();
+    if (this.lives <= 0) {
+      this.player.dead = true;
+      this.player.setVelocityY(-350);
+      this.player.setVelocityX(0);
+      var self = this;
+      this.time.delayedCall(1500, function(){ self.showEndScreen(false); });
+      return;
+    }
+    this.player.invincible = true;
+    var self = this;
+    this.tweens.add({
+      targets: this.player, alpha: 0.3, duration: 100, yoyo: true, repeat: 10,
+      onComplete: function(){ self.player.alpha = 1; self.player.invincible = false; }
+    });
+  }
+
+  showEndScreen(win) {
+    var overlay = this.add.rectangle(W/2, H/2, W, H, 0x000000, 0.75).setScrollFactor(0).setDepth(200);
+    if (win) {
+      this.add.text(W/2, H/2-70, 'YOU WIN!', {
+        fontSize: '48px', fill: '#f1c40f', fontFamily: 'Courier New', stroke: '#000', strokeThickness: 5
+      }).setScrollFactor(0).setDepth(201).setOrigin(0.5);
+    } else {
+      this.add.text(W/2, H/2-70, 'GAME OVER', {
+        fontSize: '48px', fill: '#e74c3c', fontFamily: 'Courier New', stroke: '#000', strokeThickness: 5
+      }).setScrollFactor(0).setDepth(201).setOrigin(0.5);
+    }
+    this.add.text(W/2, H/2, 'SCORE: ' + this.score, {
+      fontSize: '26px', fill: '#fff', fontFamily: 'Courier New', stroke: '#000', strokeThickness: 3
+    }).setScrollFactor(0).setDepth(201).setOrigin(0.5);
+    var s = this.add.text(W/2, H/2+70, 'Press SPACE or tap to restart', {
+      fontSize: '17px', fill: '#2ecc71', fontFamily: 'Courier New'
+    }).setScrollFactor(0).setDepth(201).setOrigin(0.5);
+    this.tweens.add({ targets: s, alpha: 0.2, duration: 500, yoyo: true, repeat: -1 });
+    var self = this;
+    this.input.keyboard.once('keydown-SPACE', function(){ self.scene.restart(); });
+    this.input.once('pointerdown', function(){ self.scene.restart(); });
+  }
+
+  showPopup(x, y, text, color) {
+    var t = this.add.text(x, y, text, {
+      fontSize: '14px', fill: color, fontFamily: 'Courier New', stroke: '#000', strokeThickness: 2
+    }).setOrigin(0.5).setDepth(50);
+    this.tweens.add({ targets: t, y: y - 45, alpha: 0, duration: 800, onComplete: function(){ t.destroy(); } });
+  }
+
+  spawnParticles(x, y, color, count) {
+    for (var i = 0; i < count; i++) {
+      var p = this.add.circle(x, y, 4, color);
+      var vx = Phaser.Math.Between(-160, 160);
+      var vy = Phaser.Math.Between(-220, -60);
+      this.tweens.add({ targets: p, x: p.x + vx*0.5, y: p.y + vy*0.3, alpha: 0, duration: 500, onComplete: function(){ p.destroy(); } });
+    }
+  }
+
+  updateHUD() {
+    this.hudScore.setText('SCORE: ' + this.score);
+    this.hudCoins.setText('COINS: ' + this.coins);
+    this.hudLives.setText('LIVES: ' + this.lives);
+  }
+
+  update() {
+    if (this.player.dead) return;
+    if (this.won) return;
+
+    var left  = this.cursors.left.isDown  || this.wasd.left.isDown  || this.mobileKeys.left;
+    var right = this.cursors.right.isDown || this.wasd.right.isDown || this.mobileKeys.right;
+    var jumpDown = this.cursors.up.isDown || this.wasd.up.isDown || this.wasd.space.isDown || this.cursors.space.isDown || this.mobileKeys.jump;
+
+    var onGround = this.player.body.blocked.down;
+
+    if (left)       { this.player.setVelocityX(-SPEED); this.player.setFlipX(true); }
+    else if (right) { this.player.setVelocityX(SPEED);  this.player.setFlipX(false); }
+    else            { this.player.setVelocityX(0); }
+
+    if (jumpDown && !this.jumpPressed && onGround) {
+      sfxJump();
+      this.player.setVelocityY(JUMP_VEL);
+      this.jumpPressed = true;
+    }
+    if (!jumpDown) this.jumpPressed = false;
+
+    // Enemy patrol
+    var self = this;
+    this.enemies.getChildren().forEach(function(e) {
+      if (!e.alive || !e.body) return;
+      if (e.body.blocked.left)  { e.dir =  1; e.body.setVelocityX(80); }
+      if (e.body.blocked.right) { e.dir = -1; e.body.setVelocityX(-80); }
+      e.setFlipX(e.body.velocity.x > 0);
+    });
+
+    // Fall off screen
+    if (this.player.y > this.physics.world.bounds.height - 50) {
+      this.playerHit();
+      if (this.lives > 0) {
+        this.player.setPosition(TILE * 2, (LEVEL.length - 3) * TILE - TILE);
+        this.player.setVelocity(0, 0);
+      }
+    }
+  }
+}
+
+const config = {
+  type: Phaser.AUTO,
+  width: W, height: H,
+  parent: 'game-container',
+  backgroundColor: '#1a1a2e',
+  physics: { default: 'arcade', arcade: { gravity: { y: GRAVITY }, debug: false } },
+  scene: [BootScene, GameScene]
+};
+
+new Phaser.Game(config);
+</script>
+</body>
+</html>

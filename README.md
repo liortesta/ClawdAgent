@@ -4,7 +4,7 @@
 
 ### The Autonomous AI Octopus
 
-**v6.2 — 47,000+ lines of TypeScript. 60 core modules. 18 agents. 29 tools. 90 skills. 5 platforms. 3 protocols. 1 brain.**
+**v6.3 — 48,000+ lines of TypeScript. 60 core modules. 18 agents. 29 tools. 90 skills. 5 platforms. 3 protocols. 1 brain.**
 
 An open-source autonomous AI agent that thinks, learns, evolves, and never stops.
 
@@ -762,7 +762,25 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
 ---
 
-## What's New in v6.2
+## What's New in v6.3
+
+### Chat Experience Overhaul
+- **Syntax Highlighting** — Code blocks now feature full syntax highlighting via highlight.js (40+ languages: JS, TS, Python, Bash, SQL, YAML, and more) with a dark theme optimized for readability
+- **One-Click Code Copy** — Every code block has a copy button with visual "Copied" feedback — no more manual selection
+- **Markdown Tables** — Pipe-delimited tables (`|col|col|`) render as styled, responsive HTML tables with alternating row colors
+- **Clipboard Image Paste** — Ctrl+V / Cmd+V pastes images directly from clipboard as file attachments — no drag & drop needed
+- **Conversation Export** — Export any conversation as Markdown (human-readable) or JSON (structured data) with one click
+- **Message Actions** — Hover over any assistant message to copy its text or retry the previous prompt
+- **Mobile-First Sidebar** — Conversation sidebar overlays on mobile instead of pushing content, fully responsive
+
+### Bug Fixes & Stability
+- **Streaming Race Condition** — Fixed stale streaming text bleeding between conversations
+- **Thinking Toggle** — Fixed dead code in the thinking section collapse/expand logic
+- **File Cleanup Leak** — Document uploads now properly clean temp files in all code paths
+- **Pending Response Queue** — Added periodic cleanup to prevent unbounded memory growth in WebSocket handler
+- **API Client** — Added missing `post()` method that was breaking mobile agent page builds
+
+### Previous (v6.2)
 
 ### Browser Automation & VNC Streaming
 - **Visual Browser Sessions** — Playwright-powered browser with Xvfb + x11vnc + noVNC. Watch your agent browse the web in real-time from the dashboard

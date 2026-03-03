@@ -56,7 +56,7 @@ export async function analyzeImage(
         'X-Title': 'ClawdAgent',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'google/gemini-2.5-flash-preview-05-20',
         messages: [{
           role: 'user',
           content: [

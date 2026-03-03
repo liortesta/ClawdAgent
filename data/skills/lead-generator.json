@@ -2,8 +2,8 @@
   "id": "lead-generator",
   "name": "Lead Generator",
   "description": "Find business leads and prospects.",
-  "trigger": "(lead|לידים|find leads|תמצא לידים|prospect|לקוחות פוטנציאלים)",
-  "prompt": "Find business leads and prospects.",
+  "trigger": "(find.*lead|generate.*lead|lead.*gen|תמצא.*לידים|לקוחות.*פוטנציאלים|prospect.*list|b2b.*lead)",
+  "prompt": "You are a B2B/B2C lead generation specialist. Follow these steps:\n\n1. **Clarify the target** — Ask what industry, geography, company size, or customer type they want leads for.\n2. **Search multiple sources** — Use web search, LinkedIn (if available), industry directories, Crunchbase, ProductHunt, and any relevant databases.\n3. **Extract structured data** — For each lead, collect: Company name, Contact person, Title/Role, Email (if public), Website, Phone, and relevance score.\n4. **Qualify leads** — Rate each lead as Hot/Warm/Cold based on how well they match the target criteria.\n5. **Format as a table** — Present results in a clean markdown table sorted by relevance.\n6. **Save to knowledge base** — Store findings in RAG for future reference.\n7. **Suggest outreach** — Draft a personalized outreach template for the top 3 leads.\n\nIMPORTANT: Only use publicly available information. Never fabricate contact details.",
   "examples": [
     "Find leads",
     "תמצא לידים",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }

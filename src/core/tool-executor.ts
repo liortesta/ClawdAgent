@@ -26,6 +26,11 @@ import { RAGTool } from '../agents/tools/rag-tool.js';
 import { WhatsAppTool } from '../agents/tools/whatsapp-tool.js';
 import { FalTool } from '../agents/tools/fal-tool.js';
 import { FacebookTool } from '../agents/tools/facebook-tool.js';
+import { TwitterTool } from '../agents/tools/twitter-tool.js';
+import { LinkedInTool } from '../agents/tools/linkedin-tool.js';
+import { TikTokTool } from '../agents/tools/tiktok-tool.js';
+import { VoiceTool } from '../agents/tools/voice-tool.js';
+import { DeployTool } from '../agents/tools/deploy-tool.js';
 import { BaseTool, ToolResult } from '../agents/tools/base-tool.js';
 import { hasPermission } from '../security/roles.js';
 import { audit } from '../security/audit-log.js';
@@ -104,6 +109,11 @@ export function initTools(): void {
   toolInstances.set('whatsapp', new WhatsAppTool());
   toolInstances.set('fal', new FalTool());
   toolInstances.set('facebook', new FacebookTool());
+  toolInstances.set('twitter', new TwitterTool());
+  toolInstances.set('linkedin', new LinkedInTool());
+  toolInstances.set('tiktok', new TikTokTool());
+  toolInstances.set('voice', new VoiceTool());
+  toolInstances.set('deploy', new DeployTool());
 
   // Apply config-driven overrides (TOOLS_DISABLED env var)
   const registry = getToolRegistry();
@@ -787,6 +797,77 @@ export function getToolDefinitions(allowedTools: string[]): any[] {
           groups: { type: 'array' as const, items: { type: 'string' as const }, description: 'Facebook group URLs for the agent' },
           testMode: { type: 'boolean' as const, description: 'Test mode — log actions without executing (default: false)' },
           limit: { type: 'number' as const, description: 'Number of logs to return (for agent_logs)' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  if (allowedTools.includes('twitter')) {
+    definitions.push({
+      name: 'twitter',
+      description: 'X (Twitter) account management and autonomous engagement agent. Actions: list_accounts, account_status(accountId), start_agent(accountId, actions?, language?, tone?, topics?, hashtags?, targetAccounts?, testMode?), stop_agent(accountId), pause_agent(accountId), resume_agent(accountId), agent_status(accountId), agent_logs(accountId, limit?), open_twitter(accountId, url?), tweet(accountId, content), navigate(accountId, url). Use for: managing Twitter accounts, running autonomous engagement (likes, replies, follows, retweets), posting tweets.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['list_accounts', 'account_status', 'start_agent', 'stop_agent', 'pause_agent', 'resume_agent', 'agent_status', 'agent_logs', 'open_twitter', 'tweet', 'navigate'], description: 'Twitter action' },
+          accountId: { type: 'string' as const, description: 'Twitter account ID' },
+          actions: { type: 'array' as const, items: { type: 'string' as const }, description: 'Agent action types: tweet, reply, like, retweet, follow, thread' },
+          language: { type: 'string' as const, description: 'Content language (e.g. English, Hebrew)' },
+          tone: { type: 'string' as const, description: 'Content tone (e.g. insightful and authentic)' },
+          topics: { type: 'array' as const, items: { type: 'string' as const }, description: 'Content topics' },
+          hashtags: { type: 'array' as const, items: { type: 'string' as const }, description: 'Preferred hashtags' },
+          targetAccounts: { type: 'array' as const, items: { type: 'string' as const }, description: 'Target accounts to engage with (@handles)' },
+          testMode: { type: 'boolean' as const, description: 'Test mode — log actions but do not execute' },
+          content: { type: 'string' as const, description: 'Tweet content (for tweet action)' },
+          url: { type: 'string' as const, description: 'URL to navigate to' },
+          limit: { type: 'number' as const, description: 'Number of logs to return' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  if (allowedTools.includes('linkedin')) {
+    definitions.push({
+      name: 'linkedin',
+      description: 'LinkedIn account management and autonomous engagement agent. Actions: list_accounts, account_status(accountId), start_agent(accountId, actions?, language?, tone?, topics?, industry?, targetAccounts?, testMode?), stop_agent(accountId), pause_agent(accountId), resume_agent(accountId), agent_status(accountId), agent_logs(accountId, limit?), open_linkedin(accountId, url?), post(accountId, content), navigate(accountId, url). Use for: managing LinkedIn accounts, running autonomous engagement (likes, comments, connections, articles), posting content.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['list_accounts', 'account_status', 'start_agent', 'stop_agent', 'pause_agent', 'resume_agent', 'agent_status', 'agent_logs', 'open_linkedin', 'post', 'navigate'], description: 'LinkedIn action' },
+          accountId: { type: 'string' as const, description: 'LinkedIn account ID' },
+          actions: { type: 'array' as const, items: { type: 'string' as const }, description: 'Agent action types: post, comment, like, connect, article' },
+          language: { type: 'string' as const, description: 'Content language' },
+          tone: { type: 'string' as const, description: 'Content tone (e.g. professional and insightful)' },
+          topics: { type: 'array' as const, items: { type: 'string' as const }, description: 'Content topics' },
+          industry: { type: 'string' as const, description: 'Industry context (e.g. Technology)' },
+          targetAccounts: { type: 'array' as const, items: { type: 'string' as const }, description: 'Target profiles to engage with' },
+          testMode: { type: 'boolean' as const, description: 'Test mode — log actions but do not execute' },
+          content: { type: 'string' as const, description: 'Post content' },
+          url: { type: 'string' as const, description: 'URL to navigate to' },
+          limit: { type: 'number' as const, description: 'Number of logs to return' },
+        },
+        required: ['action'],
+      },
+    });
+  }
+
+  if (allowedTools.includes('voice')) {
+    definitions.push({
+      name: 'voice',
+      description: 'Voice call management via Twilio + OpenAI Realtime. Actions: make_call(to), hangup(callSid), call_history(limit?), call_stats, active_calls, get_config, update_config(instructions?, voice?, language?, model?). Use for: making phone calls with AI voice, checking call history, managing voice agent settings.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          action: { type: 'string' as const, enum: ['make_call', 'hangup', 'call_history', 'call_stats', 'active_calls', 'get_config', 'update_config'], description: 'Voice action' },
+          to: { type: 'string' as const, description: 'Phone number in international format (e.g. +972501234567)' },
+          callSid: { type: 'string' as const, description: 'Call SID (for hangup)' },
+          limit: { type: 'number' as const, description: 'Number of calls to return (for call_history, default 20)' },
+          instructions: { type: 'string' as const, description: 'Voice agent instructions (for update_config or make_call)' },
+          voice: { type: 'string' as const, description: 'Voice name (alloy, ash, ballad, coral, echo, sage, shimmer, verse)' },
+          language: { type: 'string' as const, description: 'Language code (e.g. he-IL, en-US)' },
+          model: { type: 'string' as const, description: 'OpenAI Realtime model name' },
         },
         required: ['action'],
       },

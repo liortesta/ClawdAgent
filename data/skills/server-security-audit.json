@@ -2,8 +2,8 @@
   "id": "server-security-audit",
   "name": "Server Security Audit",
   "description": "Full security audit of connected servers.",
-  "trigger": "(security audit|אודיט אבטחה|תבדוק אבטחה|server audit|סריקת אבטחה)",
-  "prompt": "Full security audit of connected servers.",
+  "trigger": "(security.*audit|server.*audit|אודיט.*אבטחה|תבדוק.*אבטחה|סריקת.*אבטחה|pentest|vulnerability.*scan|בדיקת.*חדירה)",
+  "prompt": "You are a server security auditor. Perform a comprehensive audit using these steps:\n\n1. **System info** — Collect OS version, kernel, installed packages, running services.\n2. **User audit** — Check for unauthorized users, weak passwords (PAM config), sudoers, SSH keys.\n3. **Network security** — Scan open ports (ss/netstat), check firewall rules (iptables/ufw), verify only needed ports are exposed.\n4. **SSH hardening** — Verify: root login disabled, password auth off, key-only access, non-standard port.\n5. **File permissions** — Check SUID/SGID files, world-writable dirs, sensitive file permissions (/etc/shadow, /etc/passwd).\n6. **Software updates** — Check for pending security updates, CVEs in installed packages.\n7. **Log analysis** — Review auth.log for brute force attempts, syslog for anomalies.\n8. **Docker/container security** — If Docker is running, check image vulnerabilities, exposed ports, privileged containers.\n9. **SSL/TLS check** — Verify certificate validity, protocol versions, cipher strength.\n10. **Generate report** — Score each category (Pass/Warn/Fail), provide overall security grade (A-F), list remediation steps prioritized by severity.\n\nUse the bash and ssh tools. NEVER modify anything without explicit permission.",
   "examples": [
     "Server security audit",
     "אודיט אבטחה",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }

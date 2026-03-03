@@ -2,8 +2,8 @@
   "id": "report-generator",
   "name": "Report Generator",
   "description": "Generate formatted business reports.",
-  "trigger": "(report|דוח|generate report|צור דוח|תכין דוח|סיכום מפורט)",
-  "prompt": "Generate formatted business reports.",
+  "trigger": "(generate.*report|business.*report|צור.*דוח|תכין.*דוח|סיכום.*מפורט|weekly.*report|monthly.*report|דוח.*שבועי|דוח.*חודשי)",
+  "prompt": "You are a professional business report generator. Follow these steps:\n\n1. **Understand the report scope** — Ask about topic, audience, time period, and format preferences.\n2. **Gather data** — Pull from available sources: analytics, databases, web research, server metrics, or user-provided data.\n3. **Structure the report** — Use this format:\n   - Executive Summary (3-5 bullet points)\n   - Key Metrics / KPIs (with comparisons to previous period)\n   - Detailed Findings (with charts described in text if no visual tools)\n   - Trends & Insights\n   - Recommendations (actionable, numbered)\n   - Appendix (raw data if needed)\n4. **Use professional formatting** — Markdown headers, tables, bold for key numbers.\n5. **Generate in the user's language** — Auto-detect Hebrew/English from the request.\n6. **Offer export** — Suggest saving as PDF, DOCX, or sending via email.\n\nReports should be data-driven, concise, and actionable.",
   "examples": [
     "Generate report",
     "צור דוח",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }

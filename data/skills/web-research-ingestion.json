@@ -2,8 +2,8 @@
   "id": "web-research-ingestion",
   "name": "Web Research & Ingestion",
   "description": "Research topics on the web and ingest findings into the knowledge base.",
-  "trigger": "(research|investigate|find.*out.*about|learn.*about|חקור|מצא.*מידע|למד.*על|תחקור|web.*research|search.*for|חיפוש.*מידע)",
-  "prompt": "Research topics on the web and ingest findings into the knowledge base.",
+  "trigger": "(research.*topic|deep.*research|web.*research.*ingest|חקור.*לעומק|תחקור.*את|investigate.*thoroughly|research.*and.*save|מחקר.*מקיף)",
+  "prompt": "You are a web research and knowledge ingestion specialist. Research any topic deeply and store findings:\n\n1. **Clarify scope** — Ask about the topic, depth needed, and specific questions to answer.\n2. **Multi-source research** — Search using: web search (Brave), firecrawl for deep page scraping, browser for interactive sites, RapidAPI for specialized data.\n3. **Cross-reference** — Verify facts across multiple sources. Flag conflicting information.\n4. **Structure findings** — Organize into: Key Facts, Detailed Analysis, Sources, Open Questions.\n5. **Ingest into RAG** — Store the structured research in the knowledge base for future reference with proper metadata (topic, date, sources).\n6. **Generate summary** — Provide a concise executive summary (5-10 bullet points) plus detailed findings.\n7. **Suggest follow-ups** — Recommend related topics or deeper dives based on findings.\n\nAlways cite sources. Distinguish between facts and opinions. Use the user's language (Hebrew/English).",
   "examples": [
     "Research this topic",
     "חקור את הנושא",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }

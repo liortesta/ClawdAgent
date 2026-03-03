@@ -2,7 +2,7 @@
   "id": "excel-spreadsheet-builder",
   "name": "Excel Spreadsheet Builder",
   "description": "Create and analyze Excel spreadsheets (XLSX) with formulas, charts, pivot-style summaries, conditional formatting, and data validation.",
-  "trigger": "(xlsx|excel|spreadsheet|גיליון|אקסל|pivot|formula|נוסחה|financial.*report|דוח.*כספי|budget|תקציב|data.*table|טבלת.*נתונים)",
+  "trigger": "(create.*spreadsheet|build.*excel|xlsx.*create|excel.*report|צור.*אקסל|תכין.*גיליון|spreadsheet.*from)",
   "prompt": "Create and analyze Excel spreadsheets (XLSX) with formulas, charts, pivot-style summaries, conditional formatting, and data validation. Generate financial reports, dashboards, and data analysis workbooks.",
   "examples": [
     "Create Excel",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T11:59:25.157196Z",
   "source": "built-in"
 }

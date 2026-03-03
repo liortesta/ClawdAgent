@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   MessageSquare, ListTodo, Server, Bot, Clock, Settings,
-  LayoutDashboard, Sparkles, DollarSign, ScrollText, Timer, LineChart, Database, Brain, Network, Terminal, Zap, Monitor
+  LayoutDashboard, Sparkles, DollarSign, ScrollText, Timer, LineChart, Database, Brain, Network, Terminal, Zap, Monitor, Phone
 } from 'lucide-react';
 
 const links = [
@@ -11,6 +11,8 @@ const links = [
   { to: '/tasks', icon: ListTodo, label: 'Tasks' },
   { to: '/skills', icon: Sparkles, label: 'Skills' },
   { to: '/browser', icon: Monitor, label: 'Browser' },
+  { to: '/voice-agent', icon: Phone, label: 'Voice Agent' },
+  { to: '/terminal', icon: Terminal, label: 'SSH Terminal' },
   { to: '/servers', icon: Server, label: 'Servers' },
   { to: '/agents', icon: Bot, label: 'Agents' },
   { to: '/cron', icon: Timer, label: 'Cron Jobs' },

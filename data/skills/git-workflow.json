@@ -2,7 +2,7 @@
   "id": "git-workflow",
   "name": "Git Workflow",
   "description": "Help with Git operations, branching strategies, conflict resolution, and release management.",
-  "trigger": "(git|branch|merge|rebase|commit strategy|גיט|ענף|מיזוג)",
+  "trigger": "(git.*workflow|git.*branch|git.*merge|git.*rebase|manage.*git|git.*strategy|ניהול.*git|עבודה.*עם.*git)",
   "prompt": "Help with Git operations, branching strategies, conflict resolution, and release management.",
   "examples": [
     "Git branching strategy",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T11:59:25.157196Z",
   "source": "built-in"
 }

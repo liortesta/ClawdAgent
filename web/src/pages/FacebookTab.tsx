@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api/client';
 import {
   Plus, Trash2, Loader2, AlertTriangle, X, CheckCircle,
   XCircle, Clock, ShieldAlert, RefreshCw, ExternalLink, Eye, EyeOff,
-  Play, Square, Pause, ScrollText, Bot, Zap
+  Play, Square, Pause, ScrollText, Bot, Zap, Radio, Link, Users
 } from 'lucide-react';
 
 interface FacebookAccount {
@@ -42,6 +42,7 @@ interface AgentStatus {
   };
   lastError: string | null;
   startedAt: string | null;
+  config?: Record<string, unknown>;
 }
 
 interface AgentLog {
@@ -265,13 +266,46 @@ export default function FacebookTab() {
     }
   };
 
+  const logsPanelRef = useRef<HTMLDivElement>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+
   const handleShowLogs = async (accountId: string) => {
     setShowAgentPanel(showAgentPanel === accountId ? null : accountId);
     try {
-      const res = await api.fbAgentLogs(accountId, 50);
+      const res = await api.fbAgentLogs(accountId, 100);
       setAgentLogs(prev => ({ ...prev, [accountId]: res.logs }));
     } catch { /* */ }
   };
+
+  // Auto-refresh logs every 5s for the open panel
+  useEffect(() => {
+    if (!showAgentPanel) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.fbAgentLogs(showAgentPanel, 100);
+        setAgentLogs(prev => ({ ...prev, [showAgentPanel]: res.logs }));
+      } catch { /* */ }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [showAgentPanel]);
+
+  // Auto-scroll logs to bottom when new entries arrive
+  useEffect(() => {
+    if (autoScroll && logsPanelRef.current) {
+      logsPanelRef.current.scrollTop = logsPanelRef.current.scrollHeight;
+    }
+  }, [agentLogs, autoScroll]);
+
+  // Auto-open logs panel when an agent starts running
+  useEffect(() => {
+    for (const [accountId, status] of Object.entries(agentStatuses)) {
+      if ((status.state === 'running' || status.state === 'paused') && !showAgentPanel) {
+        handleShowLogs(accountId);
+        break;
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentStatuses]);
 
   if (loading) {
     return (
@@ -506,32 +540,109 @@ export default function FacebookTab() {
                     </div>
                   )}
 
-                  {/* Agent logs panel */}
-                  {showAgentPanel === account.id && agentLogs[account.id] && (
-                    <div className="border-t border-gray-800/30 max-h-60 overflow-y-auto">
-                      <div className="px-4 py-2 bg-dark-900/50">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-gray-400">Agent Logs</span>
-                          <button onClick={() => handleShowLogs(account.id)} className="text-[10px] text-gray-500 hover:text-gray-300">Refresh</button>
+                  {/* Agent live panel — config summary + real-time logs */}
+                  {showAgentPanel === account.id && (
+                    <div className="border-t border-gray-800/30">
+                      {/* Config summary bar */}
+                      {agentStatus?.config && (
+                        <div className="px-4 py-2 bg-purple-900/10 border-b border-gray-800/20 flex flex-wrap items-center gap-3 text-[11px]">
+                          <span className="text-gray-500 font-medium">Config:</span>
+                          <span className="text-purple-300">
+                            Actions: {(agentStatus.config as any).actions?.join(', ') || 'N/A'}
+                          </span>
+                          {(agentStatus.config as any).groups?.length > 0 && (
+                            <span className="flex items-center gap-1 text-blue-300">
+                              <Users className="w-3 h-3" />
+                              {(agentStatus.config as any).groups.length} groups
+                            </span>
+                          )}
+                          {(agentStatus.config as any).content?.promoLink && (
+                            <span className="flex items-center gap-1 text-green-300">
+                              <Link className="w-3 h-3" />
+                              {(agentStatus.config as any).content.promoLink}
+                              <span className="text-gray-500">({Math.round(((agentStatus.config as any).content.promoFrequency || 0) * 100)}% of posts)</span>
+                            </span>
+                          )}
+                          <span className="text-gray-500">
+                            Lang: {(agentStatus.config as any).content?.language || 'N/A'}
+                          </span>
                         </div>
-                        {agentLogs[account.id].length === 0 ? (
-                          <p className="text-[11px] text-gray-600 py-2">No logs yet</p>
-                        ) : (
-                          <div className="space-y-1">
-                            {[...agentLogs[account.id]].reverse().map((log, i) => (
-                              <div key={i} className="flex items-start gap-2 text-[11px]">
-                                <span className="text-gray-600 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                                <span className={`px-1.5 rounded text-[10px] font-medium ${
-                                  log.status === 'success' ? 'bg-green-500/10 text-green-400' :
-                                  log.status === 'error' ? 'bg-red-500/10 text-red-400' :
-                                  log.status === 'skipped' ? 'bg-yellow-500/10 text-yellow-400' :
-                                  'bg-gray-500/10 text-gray-400'
-                                }`}>{log.action}</span>
-                                <span className="text-gray-300 flex-1">{log.message}</span>
-                              </div>
-                            ))}
+                      )}
+
+                      {/* Live logs */}
+                      <div className="bg-dark-900/50">
+                        <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800/20">
+                          <div className="flex items-center gap-2">
+                            <Radio className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+                            <span className="text-xs font-semibold text-gray-400">Live Agent Logs</span>
+                            <span className="text-[10px] text-gray-600">
+                              ({agentLogs[account.id]?.length || 0} entries, auto-refresh 5s)
+                            </span>
                           </div>
-                        )}
+                          <div className="flex items-center gap-2">
+                            <label className="flex items-center gap-1 text-[10px] text-gray-500 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={autoScroll}
+                                onChange={e => setAutoScroll(e.target.checked)}
+                                className="w-3 h-3 rounded border-gray-600 bg-dark-700 text-purple-500"
+                              />
+                              Auto-scroll
+                            </label>
+                            <button
+                              onClick={() => handleShowLogs(account.id)}
+                              className="text-[10px] text-gray-500 hover:text-gray-300 flex items-center gap-1"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => setShowAgentPanel(null)}
+                              className="text-gray-600 hover:text-gray-300"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <div
+                          ref={logsPanelRef}
+                          className="max-h-80 overflow-y-auto px-4 py-2"
+                          onScroll={(e) => {
+                            const el = e.currentTarget;
+                            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+                            if (atBottom !== autoScroll) setAutoScroll(atBottom);
+                          }}
+                        >
+                          {!agentLogs[account.id] || agentLogs[account.id].length === 0 ? (
+                            <p className="text-[11px] text-gray-600 py-4 text-center">Waiting for agent activity...</p>
+                          ) : (
+                            <div className="space-y-0.5">
+                              {agentLogs[account.id].map((log, i) => (
+                                <div key={i} className={`flex items-start gap-2 text-[11px] py-0.5 ${
+                                  log.status === 'success' ? 'bg-green-500/5' :
+                                  log.status === 'error' ? 'bg-red-500/5' : ''
+                                } rounded px-1`}>
+                                  <span className="text-gray-600 whitespace-nowrap font-mono text-[10px]">
+                                    {new Date(log.timestamp).toLocaleTimeString()}
+                                  </span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase whitespace-nowrap ${
+                                    log.status === 'success' ? 'bg-green-500/20 text-green-400' :
+                                    log.status === 'error' ? 'bg-red-500/20 text-red-400' :
+                                    log.status === 'skipped' ? 'bg-yellow-500/20 text-yellow-400' :
+                                    'bg-gray-500/15 text-gray-500'
+                                  }`}>{log.status === 'info' ? log.action : log.status}</span>
+                                  <span className={`px-1 py-0.5 rounded text-[9px] font-medium ${
+                                    log.action === 'comment' ? 'text-blue-400' :
+                                    log.action === 'post' ? 'text-purple-400' :
+                                    log.action === 'group_join' ? 'text-green-400' :
+                                    log.action === 'system' ? 'text-gray-500' :
+                                    'text-gray-400'
+                                  }`}>{log.action}</span>
+                                  <span className="text-gray-300 flex-1 break-all">{log.message}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -631,19 +742,18 @@ export default function FacebookTab() {
               <p className="text-[10px] text-gray-600 mt-1">Will be included in ~20% of posts when set</p>
             </div>
 
-            {/* Groups (for group_join action) */}
-            {cfgActions.includes('group_join') && (
-              <div className="mb-4">
-                <label className="block text-sm text-gray-400 mb-1">Group URLs (one per line)</label>
-                <textarea
-                  value={cfgGroups}
-                  onChange={e => setCfgGroups(e.target.value)}
-                  placeholder="https://www.facebook.com/groups/..."
-                  rows={3}
-                  className="w-full bg-dark-800 border border-gray-700/50 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50 resize-none font-mono"
-                />
-              </div>
-            )}
+            {/* Groups — used for posting, commenting, and joining */}
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">Target Groups (one per line — slug or full URL)</label>
+              <textarea
+                value={cfgGroups}
+                onChange={e => setCfgGroups(e.target.value)}
+                placeholder={"aichatgptisrael\nisraelitech\nhttps://www.facebook.com/groups/..."}
+                rows={3}
+                className="w-full bg-dark-800 border border-gray-700/50 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50 resize-none font-mono"
+              />
+              <p className="text-[10px] text-gray-600 mt-1">Used for posts, comments, and group joins. Enter group slugs or full URLs.</p>
+            </div>
 
             {/* Test mode toggle */}
             <div className="mb-6 flex items-center gap-3 p-3 bg-dark-800 rounded-lg border border-gray-700/30">

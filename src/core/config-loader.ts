@@ -221,7 +221,7 @@ function getDefaultConfig(): YAMLConfig {
       default: 'stepfun/step-3.5-flash:free',
       economy: 'nvidia/nemotron-nano-9b-v2:free',
       reasoning: 'deepseek/deepseek-r1-0528:free',
-      vision: 'google/gemini-2.0-flash-exp:free',
+      vision: 'google/gemini-2.5-flash-preview-05-20',
       prefer_free: true,
       daily_budget_usd: 2,
     },

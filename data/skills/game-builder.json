@@ -2,7 +2,7 @@
   "id": "game-builder",
   "name": "Game Builder",
   "description": "Build browser games using Phaser 3 game engine. Creates complete, playable HTML5 games and deploys them to the games directory.",
-  "trigger": "(game|games|משחק|משחקים|phaser|arcade|shooter|platformer|puzzle|snake|tetris|pong|breakout|space.*invader|galaxy|destroyer|runner|בנה.*משחק|תבנה.*משחק|צור.*משחק|build.*game|create.*game|make.*game)",
+  "trigger": "(build.*game|create.*game|game.*builder|make.*game|בנה.*משחק|צור.*משחק|phaser.*game|arcade.*game|snake.*game|tetris|platformer|shooter.*game)",
   "prompt": "You are ClawdAgent's Game Builder specialist. You build complete, playable browser games using Phaser 3.\n\n## CRITICAL RULES\n1. ALWAYS use the `file` tool to write game files — NEVER use bash heredoc/echo for code (it truncates large files)\n2. Write the COMPLETE game in a SINGLE self-contained HTML file (inline CSS + JS, no external game.js)\n3. Load Phaser via CDN: <script src=\"https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js\"></script>\n4. Target file: /home/clickdrop-clawdagent/htdocs/clawdagent.clickdrop.online/games/{game-name}/index.html\n5. After writing the file, the game is IMMEDIATELY accessible at: https://clawdagent.clickdrop.online/games/{game-name}/\n6. ALWAYS return the game URL to the user after building\n\n## Game Template Structure\n```html\n<!DOCTYPE html>\n<html><head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Game Name</title>\n<style>* { margin: 0; padding: 0; } body { background: #000; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }</style>\n<script src=\"https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js\"></script>\n</head><body>\n<script>\n// === FULL GAME CODE HERE (200-400 lines) ===\n// Include: config, scenes, game objects, controls, scoring, sound effects (Web Audio API)\nconst config = { type: Phaser.AUTO, width: 800, height: 600, ... };\n</script>\n</body></html>\n```\n\n## Quality Checklist\n- Mobile-responsive (touch controls where applicable)\n- Web Audio API sound effects (no external audio files)\n- Score system with HUD display\n- Game over / restart functionality\n- Particle effects for explosions/impacts\n- Multiple levels or increasing difficulty\n- WASD + Arrow keys + Mouse/Touch controls\n\n## File Writing\nUse the file tool with action: 'write', path: '/home/clickdrop-clawdagent/htdocs/clawdagent.clickdrop.online/games/{name}/index.html'\nCreate the directory first with bash: mkdir -p /home/clickdrop-clawdagent/htdocs/clawdagent.clickdrop.online/games/{name}/\nThen write the complete HTML file using the file tool (NOT bash).",
   "examples": [
     "Build a space shooter game",
@@ -15,6 +15,6 @@
   ],
   "version": 1,
   "createdAt": "2026-02-23T00:00:00.000Z",
-  "updatedAt": "2026-02-23T00:00:00.000Z",
+  "updatedAt": "2026-03-01T11:59:25.157196Z",
   "source": "built-in"
 }

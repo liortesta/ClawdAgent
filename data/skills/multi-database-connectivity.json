@@ -2,7 +2,7 @@
   "id": "multi-database-connectivity",
   "name": "Multi-Database Connectivity",
   "description": "Connect and query multiple database types: PostgreSQL, MongoDB, Redis, Elasticsearch, Neo4j, and SQLite. Connection pooling, query routing, cross-database joins, migration patterns.",
-  "trigger": "(multi.*database|מספר.*מסדי.*נתונים|mongodb|mongo|redis|elasticsearch|elastic|neo4j|graph.*database|database.*connect|חיבור.*מסד|connection.*pool|drizzle|prisma|typeorm|knex|database.*migration|מיגרציה|cross.*database|nosql|NoSQL)",
+  "trigger": "(multi.*database|connect.*database|database.*connect|knex.*setup|db.*connection|חיבור.*מסד|multiple.*db)",
   "prompt": "Connect and query multiple database types: PostgreSQL, MongoDB, Redis, Elasticsearch, Neo4j, and SQLite. Connection pooling, query routing, cross-database joins, migration patterns, and TypeScript ORM integrations.",
   "examples": [
     "Connect MongoDB",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T11:59:25.157196Z",
   "source": "built-in"
 }

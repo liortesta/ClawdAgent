@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import { api } from '../api/client';
 
+export interface ProgressEntry {
+  type: string;
+  message: string;
+  agent?: string;
+  tool?: string;
+  time: number;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -11,6 +19,7 @@ export interface Message {
   model?: string;
   tokens?: { input: number; output: number; total: number };
   elapsed?: number;
+  progressLog?: ProgressEntry[];
   timestamp: Date;
 }
 

@@ -105,10 +105,9 @@ export function setupApiRoutes(engine: Engine): Router {
           } else {
             enrichedText = text || `[File uploaded: ${file.originalname} — RAG not available]`;
           }
-          attachments = [{ type: ext, url: file.path }];
         }
 
-        // Clean up temp file
+        // Clean up temp file (skip if already handled by RAG ingest path)
         if (!(file as any)._handled) {
           try { unlinkSync(file.path); } catch {}
         }

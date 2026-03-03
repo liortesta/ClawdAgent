@@ -1,6 +1,6 @@
 {
   "name": "clawdagent",
-  "version": "6.2.0",
+  "version": "6.3.0",
   "description": "Autonomous AI agent system — 18 agents, 29 tools, 90 skills. Visual browser (VNC), autonomous Facebook agent, scheduled publishing, self-evolving.",
   "type": "module",
   "license": "Apache-2.0",

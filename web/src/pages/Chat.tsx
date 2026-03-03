@@ -8,8 +8,10 @@ import {
   Brain, ChevronDown, ChevronUp, Plus, PanelLeftClose, PanelLeft, MoreVertical,
   Paperclip, FileText, Image as ImageIcon, File as FileIcon,
   Languages, Sparkles, Palette, Cpu, Wrench, Zap, QrCode, Shield, GitBranch, Cog,
-  Monitor,
+  Monitor, Copy, Check, Download, RotateCcw,
 } from 'lucide-react';
+import hljs from 'highlight.js/lib/common';
+import 'highlight.js/styles/github-dark.css';
 
 const RESPONSE_MODES = [
   { id: 'auto' as const, label: 'אוטומטי', labelEn: 'Auto', icon: Cpu, color: 'text-blue-400', desc: 'המערכת מחליטה' },
@@ -91,6 +93,43 @@ function detectDir(text: string): 'rtl' | undefined {
   return rtlChars.length / nonSpace.length > 0.3 ? 'rtl' : undefined;
 }
 
+/** Code block with syntax highlighting + copy button */
+function CodeBlock({ code, lang }: { code: string; lang?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const highlighted = useMemo(() => {
+    if (lang && hljs.getLanguage(lang)) {
+      try { return hljs.highlight(code, { language: lang }).value; } catch {}
+    }
+    try { return hljs.highlightAuto(code).value; } catch {}
+    return code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }, [code, lang]);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="relative group/code my-2">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#1a1b26] border border-gray-800 rounded-t-lg">
+        <span className="text-[10px] text-gray-500 font-mono">{lang || 'code'}</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-gray-400 hover:text-white hover:bg-gray-700/50 transition-colors"
+        >
+          {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+        </button>
+      </div>
+      <pre className="bg-[#0d1117] border border-t-0 border-gray-800 rounded-b-lg px-3 py-2 overflow-x-auto text-xs font-mono leading-relaxed">
+        <code className="hljs" dangerouslySetInnerHTML={{ __html: highlighted }} />
+      </pre>
+    </div>
+  );
+}
+
 /** Render inline markdown: **bold**, *italic*, `code`, [links](url) */
 function renderInline(text: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
@@ -143,6 +182,46 @@ function renderTextLines(text: string): React.ReactNode[] {
       listItems.push(ol[1]);
     } else {
       flushList();
+
+      // ── Markdown table detection ──
+      if (/^\|.+\|$/.test(line.trim())) {
+        const tableRows: string[][] = [];
+        while (i < lines.length && /^\|.+\|$/.test(lines[i].trim())) {
+          const cells = lines[i].trim().slice(1, -1).split('|').map(c => c.trim());
+          tableRows.push(cells);
+          i++;
+        }
+        i--; // compensate for-loop increment
+        const dataRows = tableRows.filter(row => !row.every(c => /^[-:]+$/.test(c)));
+        if (dataRows.length > 0) {
+          const header = dataRows[0];
+          const body = dataRows.slice(1);
+          elements.push(
+            <div key={`t${elements.length}`} className="overflow-x-auto my-2 rounded-lg border border-gray-700">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-dark-900">
+                    {header.map((cell, j) => (
+                      <th key={j} className="px-3 py-1.5 text-left text-xs font-semibold text-gray-300 border-b border-gray-700">{renderInline(cell)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {body.map((row, ri) => (
+                    <tr key={ri} className={ri % 2 === 0 ? 'bg-dark-950/50' : 'bg-dark-900/30'}>
+                      {row.map((cell, j) => (
+                        <td key={j} className="px-3 py-1.5 text-gray-300 border-b border-gray-800">{renderInline(cell)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+          continue;
+        }
+      }
+
       if (line.match(/^###\s+(.+)/)) {
         elements.push(<h5 key={i} className="text-sm font-semibold text-white mt-2 mb-0.5">{renderInline(line.slice(4))}</h5>);
       } else if (line.match(/^##\s+(.+)/)) {
@@ -199,12 +278,7 @@ function renderFormattedContent(content: string) {
     <div className="formatted-msg text-sm leading-relaxed break-words space-y-1">
       {segments.map((seg, i) => {
         if (seg.type === 'code') {
-          return (
-            <pre key={i} className="bg-dark-950 border border-gray-800 rounded-lg px-3 py-2 overflow-x-auto text-xs my-2 font-mono">
-              {seg.lang && <span className="text-[10px] text-gray-500 block mb-1 font-sans">{seg.lang}</span>}
-              <code className="text-green-300">{seg.value}</code>
-            </pre>
-          );
+          return <CodeBlock key={i} code={seg.value} lang={seg.lang} />;
         }
         if (seg.type === 'image') {
           return <img key={i} src={seg.value} alt="Image" className="my-2 rounded-lg border border-gray-700 max-w-[280px]" />;
@@ -259,6 +333,8 @@ export default function Chat() {
 
   // Track which conversation is awaiting a WS response
   const pendingConvRef = useRef<string | null>(null);
+  // Ref to capture progress log for saving into final message
+  const progressLogRef = useRef<Array<{ type: string; message: string; agent?: string; tool?: string; time: number }>>([]);
 
   const messages = useMemo(() => {
     return getMessages();
@@ -304,6 +380,11 @@ export default function Chat() {
       // Use conversationId from response (for recovered messages) or from pending ref
       const targetConv = data.conversationId || pendingConvRef.current;
       pendingConvRef.current = null;
+      // Capture progress log before clearing
+      const savedProgress = progressLogRef.current.filter(ev =>
+        !/^(Still working|Working\.\.\.)/.test(ev.message) && ev.message !== 'Processing your message...'
+      );
+      progressLogRef.current = [];
       setProgressLog([]);
       setStreamingText('');
       if (targetConv) {
@@ -316,6 +397,7 @@ export default function Chat() {
           model: data.model,
           tokens: data.tokens,
           elapsed: data.elapsed,
+          progressLog: savedProgress.length > 0 ? savedProgress : undefined,
         });
       }
       setConversationLoading(null);
@@ -324,6 +406,7 @@ export default function Chat() {
     ws.on('error', (data: { message: string }) => {
       const targetConv = pendingConvRef.current;
       pendingConvRef.current = null;
+      progressLogRef.current = [];
       setProgressLog([]);
       if (targetConv) {
         addMessageTo(targetConv, {
@@ -335,11 +418,14 @@ export default function Chat() {
     });
 
     ws.on('progress', (data: { type: string; message: string; agent?: string; tool?: string }) => {
-      setProgressLog(prev => [...prev, { ...data, time: Date.now() }]);
+      const entry = { ...data, time: Date.now() };
+      progressLogRef.current = [...progressLogRef.current, entry];
+      setProgressLog(prev => [...prev, entry]);
     });
 
     ws.on('cancelled', () => {
       pendingConvRef.current = null;
+      progressLogRef.current = [];
       setProgressLog([]);
       setStreamingText('');
       setConversationLoading(null);
@@ -422,6 +508,8 @@ export default function Chat() {
   useEffect(() => {
     if (activeConversationId) {
       loadConversationFromServer(activeConversationId);
+      // Clear stale streaming text from a different conversation
+      setStreamingText('');
     }
   }, [activeConversationId, loadConversationFromServer]);
 
@@ -522,6 +610,56 @@ export default function Chat() {
     setChatTheme(v => { const n = v === 'default' ? 'glass' : 'default'; localStorage.setItem('clawdagent-theme', n); return n; });
   }, []);
 
+  // ── Export conversation ────────────────────────────────────────
+  const handleExport = useCallback((format: 'md' | 'json') => {
+    if (messages.length === 0) return;
+    const conv = conversations.find(c => c.id === activeConversationId);
+    const title = conv?.title || 'conversation';
+    let content: string;
+    let mime: string;
+    let ext: string;
+
+    if (format === 'json') {
+      content = JSON.stringify({ title, exportedAt: new Date().toISOString(), messages: messages.map(m => ({
+        role: m.role, content: m.content, agent: m.agent, model: m.model, tokens: m.tokens, elapsed: m.elapsed, timestamp: m.timestamp,
+      })) }, null, 2);
+      mime = 'application/json';
+      ext = 'json';
+    } else {
+      const lines = [`# ${title}\n`, `_Exported ${new Date().toLocaleString()}_\n`];
+      for (const m of messages) {
+        lines.push(`---\n`);
+        lines.push(`**${m.role === 'user' ? 'User' : (m.agent || 'Assistant')}** _(${new Date(m.timestamp).toLocaleTimeString()})_\n`);
+        lines.push(m.content + '\n');
+      }
+      content = lines.join('\n');
+      mime = 'text/markdown';
+      ext = 'md';
+    }
+
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/[^a-zA-Z0-9\u0590-\u05FF-_ ]/g, '')}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [messages, conversations, activeConversationId]);
+
+  // ── Retry last user message ────────────────────────────────────
+  const handleRetry = useCallback((messageId: string) => {
+    const idx = messages.findIndex(m => m.id === messageId);
+    if (idx < 0) return;
+    // Find the user message before this assistant message
+    for (let j = idx - 1; j >= 0; j--) {
+      if (messages[j].role === 'user') {
+        setInput(messages[j].content);
+        inputRef.current?.focus();
+        break;
+      }
+    }
+  }, [messages]);
+
   // ── Switch conversation — free switch, no cancel ───────────────
   const handleSwitchConversation = useCallback((id: string) => {
     if (id === activeConversationId) return;
@@ -559,7 +697,7 @@ export default function Chat() {
     <div className="flex h-full bg-dark-950">
       {/* ── Conversations Sidebar ──────────────────────────────── */}
       {showConversations && (
-        <div className="w-64 shrink-0 flex flex-col border-r border-gray-800 bg-dark-900">
+        <div className="w-64 shrink-0 flex flex-col border-r border-gray-800 bg-dark-900 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-2xl max-md:shadow-black/50">
           {/* Sidebar header */}
           <div className="flex items-center justify-between px-3 py-3 border-b border-gray-800">
             <span className="text-sm font-semibold text-gray-300">Conversations</span>
@@ -736,6 +874,31 @@ export default function Chat() {
             >
               <Trash2 className="w-4 h-4" />
             </button>
+
+            {/* Export conversation */}
+            <div className="relative group/export">
+              <button
+                disabled={messages.length === 0}
+                className="p-2 text-gray-400 hover:text-primary-400 hover:bg-dark-800 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Export conversation"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+              <div className="absolute top-full right-0 mt-1 bg-dark-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden min-w-[140px] z-50 hidden group-hover/export:block">
+                <button
+                  onClick={() => handleExport('md')}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-dark-700 transition-colors"
+                >
+                  <FileText className="w-3.5 h-3.5" /> Markdown
+                </button>
+                <button
+                  onClick={() => handleExport('json')}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-dark-700 transition-colors"
+                >
+                  <FileIcon className="w-3.5 h-3.5" /> JSON
+                </button>
+              </div>
+            </div>
 
             {/* WhatsApp QR */}
             <button
@@ -916,31 +1079,88 @@ export default function Chat() {
                       </div>
                     )}
 
-                    {/* Thinking (collapsible, like Claude Code) */}
+                    {/* THINKING — always visible, collapsible */}
                     {!isUser && m.thinking && (
                       <div className="mb-2">
                         <button
                           onClick={() => setExpandedThinking(prev => {
                             const next = new Set(prev);
-                            next.has(m.id) ? next.delete(m.id) : next.add(m.id);
+                            const key = `${m.id}_collapsed`;
+                            if (prev.has(key)) {
+                              next.delete(key);
+                            } else {
+                              next.add(key);
+                            }
                             return next;
                           })}
-                          className="flex items-center gap-1.5 text-[11px] text-amber-400/80 hover:text-amber-300 transition-colors"
+                          className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                            isGlass ? 'text-amber-300/90 hover:text-amber-200' : 'text-amber-400 hover:text-amber-300'
+                          }`}
                         >
-                          <Brain className="w-3 h-3" />
-                          <span>Thinking</span>
-                          {expandedThinking.has(m.id)
-                            ? <ChevronUp className="w-3 h-3" />
-                            : <ChevronDown className="w-3 h-3" />
+                          <Brain className="w-3.5 h-3.5" />
+                          <span>THINKING</span>
+                          {expandedThinking.has(`${m.id}_collapsed`)
+                            ? <ChevronDown className="w-3 h-3" />
+                            : <ChevronUp className="w-3 h-3" />
                           }
                         </button>
-                        {expandedThinking.has(m.id) && (
-                          <div className={`mt-1.5 px-3 py-2 rounded-lg text-[12px] whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto ${
+                        {/* Default: expanded (shown). Only hide if _collapsed flag is set */}
+                        {!expandedThinking.has(`${m.id}_collapsed`) && (
+                          <div className={`mt-1.5 px-3 py-2 rounded-lg text-[12px] whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto ${
                             isGlass
-                              ? 'bg-amber-500/5 border border-amber-500/15 text-amber-200/70 backdrop-blur-sm'
-                              : 'bg-amber-500/5 border border-amber-500/10 text-amber-200/70'
+                              ? 'bg-amber-500/8 border border-amber-500/20 text-amber-200/80 backdrop-blur-sm'
+                              : 'bg-amber-500/8 border border-amber-500/15 text-amber-200/80'
                           }`}>
                             {m.thinking}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Progress Log — saved pipeline steps */}
+                    {!isUser && m.progressLog && m.progressLog.length > 0 && (
+                      <div className="mb-2">
+                        <button
+                          onClick={() => setExpandedThinking(prev => {
+                            const next = new Set(prev);
+                            if (prev.has(`${m.id}_progress_collapsed`)) {
+                              next.delete(`${m.id}_progress_collapsed`);
+                            } else {
+                              next.add(`${m.id}_progress_collapsed`);
+                            }
+                            return next;
+                          })}
+                          className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors ${
+                            isGlass ? 'text-cyan-300/90 hover:text-cyan-200' : 'text-cyan-400 hover:text-cyan-300'
+                          }`}
+                        >
+                          <Wrench className="w-3.5 h-3.5" />
+                          <span>{m.progressLog.filter(e => e.type === 'tool').length} STEPS</span>
+                          {expandedThinking.has(`${m.id}_progress_collapsed`)
+                            ? <ChevronDown className="w-3 h-3" />
+                            : <ChevronUp className="w-3 h-3" />
+                          }
+                        </button>
+                        {!expandedThinking.has(`${m.id}_progress_collapsed`) && (
+                          <div className={`mt-1.5 px-3 py-2 rounded-lg text-[11px] leading-relaxed max-h-48 overflow-y-auto space-y-1 ${
+                            isGlass
+                              ? 'bg-cyan-500/5 border border-cyan-500/15 backdrop-blur-sm'
+                              : 'bg-cyan-500/5 border border-cyan-500/10'
+                          }`}>
+                            {m.progressLog.map((ev, i) => {
+                              const isToolEv = ev.type === 'tool';
+                              const isError = ev.type === 'error';
+                              return (
+                                <div key={i} className="flex items-start gap-1.5">
+                                  <span className={`shrink-0 mt-0.5 ${
+                                    isError ? 'text-red-400' : isToolEv ? 'text-green-400' : 'text-cyan-400/70'
+                                  }`}>
+                                    {isError ? '✗' : isToolEv ? '⚡' : '›'}
+                                  </span>
+                                  <span className={isError ? 'text-red-300/80' : isToolEv ? 'text-green-300/80' : 'text-gray-400'}>{ev.message}</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -987,12 +1207,35 @@ export default function Chat() {
                       </div>
                     )}
 
-                    {/* Timestamp */}
-                    <p className={`text-[10px] mt-1 ${
-                      isUser ? 'text-white/50' : (isGlass ? 'text-gray-400' : 'text-gray-500')
-                    } ${msgDir === 'rtl' ? 'text-left' : 'text-right'}`} dir="ltr">
-                      {formatTime(m.timestamp)}
-                    </p>
+                    {/* Timestamp + Message Actions */}
+                    <div className={`flex items-center gap-2 mt-1 ${msgDir === 'rtl' ? 'flex-row-reverse' : ''}`} dir="ltr">
+                      <p className={`text-[10px] ${
+                        isUser ? 'text-white/50' : (isGlass ? 'text-gray-400' : 'text-gray-500')
+                      }`}>
+                        {formatTime(m.timestamp)}
+                      </p>
+                      {/* Action buttons — visible on hover */}
+                      {!isUser && (
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(m.content);
+                            }}
+                            className="p-1 rounded text-gray-500 hover:text-white hover:bg-gray-700/50 transition-colors"
+                            title="Copy message"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => handleRetry(m.id)}
+                            className="p-1 rounded text-gray-500 hover:text-white hover:bg-gray-700/50 transition-colors"
+                            title="Retry"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1434,6 +1677,18 @@ export default function Chat() {
                   send();
                 }
               }}
+              onPaste={(e) => {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                for (const item of Array.from(items)) {
+                  if (item.type.startsWith('image/')) {
+                    e.preventDefault();
+                    const file = item.getAsFile();
+                    if (file) setAttachedFile(file);
+                    break;
+                  }
+                }
+              }}
               placeholder={
                 loadingConversationId
                   ? (loadingConversationId === activeConversationId
@@ -1471,8 +1726,8 @@ export default function Chat() {
               </button>
             )}
           </div>
-          <p className="text-center text-[11px] text-gray-600 mt-2" dir="ltr">
-            Enter to send · Shift+Enter for new line · Drag & drop files{!wsConnected && ' · REST fallback'}
+          <p className="text-center text-[11px] text-gray-600 mt-2 hidden sm:block" dir="ltr">
+            Enter to send · Shift+Enter for new line · Paste/drop images & files{!wsConnected && ' · REST fallback'}
           </p>
         </div>
       </div>

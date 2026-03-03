@@ -2,7 +2,7 @@
   "id": "enterprise-compliance",
   "name": "Enterprise Compliance & Privacy",
   "description": "Implement GDPR, Israeli Privacy Protection Act, CCPA, and SOC 2 compliance for web applications. Data deletion workflows, consent management, privacy policies, audit logs, and data processing agreements.",
-  "trigger": "(gdpr|GDPR|privacy.*policy|מדיניות.*פרטיות|compliance|תאימות|data.*deletion|מחיקת.*מידע|consent.*manage|הסכמה|CCPA|SOC.*2|data.*protection|הגנת.*מידע|right.*to.*forget|זכות.*להישכח|DPA|data.*process.*agreement|cookie.*consent|privacy.*by.*design)",
+  "trigger": "(compliance.*check|gdpr.*compliance|enterprise.*compliance|regulatory|תאימות|בדיקת.*תאימות|sox.*compliance|hipaa)",
   "prompt": "Implement GDPR, Israeli Privacy Protection Act, CCPA, and SOC 2 compliance for web applications. Data deletion workflows, consent management, privacy policies, audit logs, and data processing agreements.",
   "examples": [
     "GDPR compliance",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T11:59:25.157196Z",
   "source": "built-in"
 }

@@ -82,6 +82,19 @@ function flushPendingResponses(userId: string, ws: WebSocket): number {
   return delivered;
 }
 
+// Periodic cleanup of expired pending responses (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, items] of pendingResponses) {
+    const alive = items.filter(i => now - i.timestamp <= PENDING_RESPONSE_TTL_MS);
+    if (alive.length === 0) {
+      pendingResponses.delete(userId);
+    } else {
+      pendingResponses.set(userId, alive);
+    }
+  }
+}, 5 * 60 * 1000);
+
 // ─── WebSocket Setup ────────────────────────────────────────────────────────
 
 export function setupWebSocket(wss: WebSocketServer, engine: Engine) {
@@ -187,6 +200,74 @@ function setupMessageHandler(ws: WebSocket, engine: Engine, user: { userId: stri
 
       const { text, conversationId, responseMode, model } = msg;
       if (!text) return;
+
+      // ── Direct command execution: !command ──────────────────────
+      // Bypass AI entirely — run bash directly for instant results
+      // Supports multiple commands: each line starting with ! is a separate command
+      if (text.startsWith('!')) {
+        if (processing) {
+          sendSafe(ws, { type: 'error', data: { message: 'Still processing previous message, please wait...' } });
+          return;
+        }
+        processing = true;
+
+        // Parse commands: split by newline, each line starting with ! is a command
+        const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
+        const commands: string[] = [];
+        for (const line of lines) {
+          if (line.startsWith('!')) {
+            commands.push(line.slice(1).trim());
+          } else if (commands.length === 0) {
+            // First line without ! — treat everything as one command
+            commands.push(text.slice(1).trim());
+            break;
+          }
+        }
+
+        if (commands.length === 0 || commands.every(c => !c)) { processing = false; return; }
+
+        const startTime = Date.now();
+        const { exec } = await import('child_process');
+        const { promisify } = await import('util');
+        const execAsync = promisify(exec);
+
+        // Block dangerous commands
+        const dangerous = [/rm\s+-rf\s+\/(?!\w)/, /mkfs\./, /dd\s+if=/, /:\(\)\s*\{/, /shutdown/, /reboot/];
+
+        const results: string[] = [];
+        for (const command of commands) {
+          if (!command) continue;
+          sendSafe(ws, { type: 'progress', data: { type: 'tool', message: `⚡ ${command.slice(0, 100)}` } });
+
+          if (dangerous.some(p => p.test(command))) {
+            results.push(`$ ${command}\n🚫 פקודה מסוכנת — חסומה`);
+            continue;
+          }
+
+          try {
+            const { stdout, stderr } = await execAsync(command, {
+              timeout: 60000,
+              maxBuffer: 1024 * 1024,
+              cwd: process.cwd(),
+            });
+            const output = (stdout || '') + (stderr ? `\nSTDERR: ${stderr}` : '');
+            results.push(`$ ${command}\n${output.trim() || '(no output)'}`);
+          } catch (err: any) {
+            const errOut = [err.stdout, err.stderr].filter(Boolean).join('\n');
+            results.push(`$ ${command}\n❌ ${err.message}${errOut ? '\n' + errOut : ''}`);
+          }
+        }
+
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        sendSafe(ws, { type: 'message', data: {
+          text: results.join('\n\n'),
+          agent: 'terminal',
+          elapsed,
+          conversationId,
+        } });
+        processing = false;
+        return;
+      }
 
       // Prevent concurrent requests from same user
       if (processing) {

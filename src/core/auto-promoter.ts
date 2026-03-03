@@ -301,6 +301,8 @@ export function registerPromoterCron(cronEngine: { registerAction: (name: string
       body: result.slice(0, 300),
       severity: 'success',
       source: 'system',
+      actionUrl: '/cron',
+      metadata: { status: 'published', fullContent: result },
     });
     notificationStore.flush().catch(() => {});
 

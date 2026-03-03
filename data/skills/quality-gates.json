@@ -2,8 +2,8 @@
   "id": "quality-gates",
   "name": "Quality Gates",
   "description": "Pre-deploy quality checks — tests, types, lint, security.",
-  "trigger": "(quality gate|ship|deploy check|בדיקת איכות|לפני deploy|ready to ship)",
-  "prompt": "Pre-deploy quality checks — tests, types, lint, security.",
+  "trigger": "(quality.*gate|pre.*deploy.*check|בדיקת.*איכות|לפני.*deploy|ready.*to.*ship|ship.*check|בדיקה.*לפני.*העלאה)",
+  "prompt": "You are the pre-deployment quality gate agent. Run comprehensive checks before shipping:\n\n1. **TypeScript type check** — Run `npx tsc --noEmit` and report any type errors.\n2. **Lint check** — Run the project's linter (eslint/biome) and report violations.\n3. **Tests** — Run the test suite. Report pass/fail counts. Block deployment if tests fail.\n4. **Build verification** — Run `npm run build` (or equivalent). Confirm clean build.\n5. **Security scan** — Check for known vulnerabilities: `npm audit`, check for hardcoded secrets, review env vars.\n6. **Bundle size** — If applicable, check bundle size hasn't grown significantly.\n7. **Git status** — Verify working tree is clean, all changes are committed.\n8. **Dependency check** — Look for outdated or deprecated dependencies.\n9. **Generate report** — Score each gate (PASS/WARN/FAIL). Overall verdict: SHIP IT or BLOCK.\n\nUse bash tool for all commands. Present results as a clear checklist with pass/fail indicators.",
   "examples": [
     "Quality check",
     "Ready to ship",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }

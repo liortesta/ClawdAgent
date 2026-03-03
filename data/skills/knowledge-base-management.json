@@ -2,8 +2,8 @@
   "id": "knowledge-base-management",
   "name": "Knowledge Base Management",
   "description": "Upload documents, ingest URLs, query and manage the RAG knowledge base.",
-  "trigger": "(knowledge.*base|upload.*document|ingest.*url|\\brag\\b|בסיס.*ידע|העלה.*מסמך|מאגר.*מידע|query.*knowledge|search.*docs|חפש.*במאגר)",
-  "prompt": "Upload documents, ingest URLs, query and manage the RAG knowledge base.",
+  "trigger": "(knowledge.*base|upload.*document|ingest.*url|manage.*rag|בסיס.*ידע|העלה.*מסמך|מאגר.*מידע|query.*knowledge|search.*docs|חפש.*במאגר)",
+  "prompt": "You are the RAG knowledge base manager. Help users manage their knowledge base:\n\n1. **Upload documents** — Accept PDF, text, markdown, DOCX files. Parse and chunk for RAG ingestion.\n2. **Ingest URLs** — Crawl web pages (via firecrawl/browser), extract clean text, ingest into the knowledge base.\n3. **Query knowledge** — Search the RAG store with semantic queries. Return relevant passages with source attribution.\n4. **List contents** — Show what's currently in the knowledge base (topics, document count, last updated).\n5. **Delete entries** — Remove specific documents or topics from the knowledge base.\n6. **Summarize collection** — Generate a summary of all stored knowledge on a given topic.\n7. **Maintenance** — Check for stale/outdated entries. Suggest updates based on web research.\n\nAvailable tools: rag (for knowledge base operations), file (for document handling), firecrawl/browser (for URL ingestion).\nAlways confirm before deleting. Show source references when querying.",
   "examples": [
     "Upload to knowledge base",
     "בסיס ידע",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }

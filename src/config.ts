@@ -90,6 +90,11 @@ const configSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
+  // Voice Agent (Twilio + OpenAI Realtime)
+  VOICE_AGENT_INSTRUCTIONS: z.string().optional(),
+  VOICE_AGENT_VOICE: z.string().default('ballad'),
+  OPENAI_REALTIME_MODEL: z.string().default('gpt-4o-realtime-preview-2025-06-03'),
+  PUBLIC_URL: z.string().optional(),
   // Kie.ai (AI content generation)
   KIE_AI_API_KEY: z.string().optional(),
   // ElevenLabs (TTS, voice cloning, podcasts, dubbing)
@@ -128,6 +133,9 @@ const configSchema = z.object({
   OPENCLAW_DEVICE_PUBLIC_KEY: z.string().optional(),
   OPENCLAW_DEVICE_PRIVATE_KEY: z.string().optional(),
   OPENCLAW_DEVICE_TOKEN: z.string().optional(),
+
+  // Appium (Android mobile automation)
+  APPIUM_URL: z.string().default('http://localhost:4723'),
 
   // Crypto Trading
   TRADING_ENABLED: z.string().default('false').transform(v => v === 'true'),

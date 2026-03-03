@@ -2,8 +2,8 @@
   "id": "competitor-watch",
   "name": "Competitor Watch",
   "description": "Monitor competitor websites and report changes.",
-  "trigger": "(competitor|מתחרים|תנטר מתחרים|watch competitor|monitor competitor)",
-  "prompt": "Monitor competitor websites and report changes.",
+  "trigger": "(monitor.*competitor|competitor.*watch|תנטר.*מתחרים|ניתוח.*מתחרים|competitive.*analysis|competitor.*analy|מתחרים.*שלי)",
+  "prompt": "You are a competitive intelligence analyst. Monitor and analyze competitors:\n\n1. **Identify competitors** — Ask which competitors to monitor, or suggest relevant ones based on the user's industry.\n2. **Website changes** — Use firecrawl/browser to capture current state of competitor websites. Compare with previous snapshots if available in memory.\n3. **Product updates** — Check for new features, pricing changes, product launches.\n4. **Social media activity** — Search for competitor mentions, engagement rates, content strategy.\n5. **SEO positioning** — Compare keyword rankings, domain authority signals, content strategy.\n6. **Technology stack** — Detect frameworks, tools, and infrastructure (via Wappalyzer-style analysis).\n7. **Pricing intelligence** — Document pricing tiers, compare with user's pricing.\n8. **SWOT summary** — For each competitor: Strengths, Weaknesses, Opportunities (for us), Threats.\n9. **Save to memory** — Store findings in RAG for trend tracking over time.\n10. **Alert on changes** — Flag significant changes since last check.\n\nPresent as a structured competitive analysis report.",
   "examples": [
     "Monitor competitors",
     "תנטר מתחרים",
@@ -11,6 +11,6 @@
   ],
   "version": 1,
   "createdAt": "2025-12-15T10:00:00.000Z",
-  "updatedAt": "2026-02-22T23:06:33.179Z",
+  "updatedAt": "2026-03-01T09:58:56.876582Z",
   "source": "built-in"
 }
