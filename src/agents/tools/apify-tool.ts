@@ -14,7 +14,7 @@ const POPULAR_ACTORS: Record<string, { id: string; description: string; sampleIn
   ],
   'e-commerce': [
     { id: 'apify/amazon-scraper', description: 'Scrape Amazon products, reviews, prices', sampleInput: { categoryOrProductUrls: [{ url: 'https://amazon.com/dp/ASIN' }] } },
-    { id: 'apify/google-maps-scraper', description: 'Scrape Google Maps listings, reviews', sampleInput: { searchStringsArray: ['restaurants tel aviv'], maxCrawledPlaces: 50 } },
+    { id: 'johnvc/google-maps-places-api', description: 'Scrape Google Maps listings, ratings', sampleInput: { searchTerms: ['restaurants tel aviv'], maxResultsPerSearch: 50 } },
   ],
   'data': [
     { id: 'apify/google-search-scraper', description: 'Scrape Google search results', sampleInput: { queries: 'search query', maxPagesPerQuery: 1 } },
